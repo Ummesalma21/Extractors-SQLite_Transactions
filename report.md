@@ -126,8 +126,8 @@ If a crash occurs between Phase 1 and Phase 2, the journal exists and SQLite can
 **Problem it solves:** Upper layers (B-tree, VDBE) must not deal with raw disk I/O, locking, or journaling. The Pager abstracts all of this — upper layers just request "give me page #N" or "I'm about to modify page #N."
 
 **Tradeoff:**
-- ✅ Clean separation of concerns; crash recovery is entirely in the Pager
-- ❌ The Pager becomes a monolithic bottleneck. All concurrency control, caching, journaling, and I/O are coupled together, making it difficult to optimize one without affecting others.
+- Clean separation of concerns; crash recovery is entirely in the Pager
+- The Pager becomes a monolithic bottleneck. All concurrency control, caching, journaling, and I/O are coupled together, making it difficult to optimize one without affecting others.
 
 ---
 
@@ -171,8 +171,8 @@ SQLite does not implement Multi-Version Concurrency Control (MVCC) like PostgreS
 **Problem it solves:** Eliminates the complexity of managing row-level version chains, garbage collection, and transaction IDs. The entire locking model fits in a few hundred lines.
 
 **Tradeoff:**
-- ✅ Radically simpler implementation; no phantom reads, no version storms
-- ❌ Poor write scalability. Concurrent writes serialize at the file lock level. SQLite is unsuitable for high write-concurrency workloads (e.g., >100 concurrent writers).
+- Radically simpler implementation; no phantom reads, no version storms
+- Poor write scalability. Concurrent writes serialize at the file lock level. SQLite is unsuitable for high write-concurrency workloads (e.g., >100 concurrent writers).
 
 ```c
 // src/os_unix.c
@@ -221,7 +221,7 @@ See `experiment_wal_vs_rollback.py` in the repository.
 | Mode | 10K rows (no sync) | 10K rows (FULLFSYNC) | Concurrent reads |
 |---|---|---|---|
 | Rollback (DELETE) | Baseline | ~3× slower | Readers blocked |
-| WAL | ~10% faster | ~1.8× slower than DELETE no-sync | Readers unblocked ✅ |
+| WAL | ~10% faster | ~1.8× slower than DELETE no-sync | Readers unblocked |
 
 **Conclusion:** WAL wins in read-heavy concurrent workloads. Rollback journal is simpler and sufficient for embedded/mobile write-only use cases.
 
