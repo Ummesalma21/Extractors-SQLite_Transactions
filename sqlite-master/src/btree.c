@@ -9398,7 +9398,7 @@ int sqlite3BtreeInsert(
   int seekResult                 /* Result of prior IndexMoveto() call */
 ){
   int rc;
-  //printf("[TRACE] sqlite3BtreeInsert: Inserting row/cell into B-Tree\n");
+  printf("[TRACE] sqlite3BtreeInsert: Inserting row/cell into B-Tree\n");
   int loc = seekResult;          /* -1: before desired location  +1: after */
   int szNew = 0;
   int idx;

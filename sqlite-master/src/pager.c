@@ -1160,7 +1160,7 @@ static int pagerUnlockDb(Pager *pPager, int eLock){
 */
 static int pagerLockDb(Pager *pPager, int eLock){
   int rc = SQLITE_OK;
-  //printf("[TRACE] pagerLockDb: Escalating lock to %d\n", eLock);
+  printf("[TRACE] pagerLockDb: Escalating lock to %d\n", eLock);
 
   assert( eLock==SHARED_LOCK || eLock==RESERVED_LOCK || eLock==EXCLUSIVE_LOCK );
   if( pPager->eLock<eLock || pPager->eLock==UNKNOWN_LOCK ){
@@ -5922,7 +5922,7 @@ static int pager_open_journal(Pager *pPager){
 */
 int sqlite3PagerBegin(Pager *pPager, int exFlag, int subjInMemory){
   int rc = SQLITE_OK;
-  //printf("[TRACE] sqlite3PagerBegin: Acquiring database lock (Phase: %d)\n", exFlag);
+  printf("[TRACE] sqlite3PagerBegin: Acquiring database lock (Phase: %d)\n", exFlag);
 
   if( pPager->errCode ) return pPager->errCode;
   assert( pPager->eState>=PAGER_READER && pPager->eState<PAGER_ERROR );
@@ -6470,7 +6470,7 @@ int sqlite3PagerCommitPhaseOne(
   int noSync                      /* True to omit the xSync on the db file */
 ){
   int rc = SQLITE_OK;             /* Return code */
-  //printf("[TRACE] sqlite3PagerCommitPhaseOne: Starting Phase 1 of Commit\n");
+  printf("[TRACE] sqlite3PagerCommitPhaseOne: Starting Phase 1 of Commit\n");
 
 
   assert( pPager->eState==PAGER_WRITER_LOCKED
@@ -6705,7 +6705,7 @@ commit_phase_one_exit:
 */
 int sqlite3PagerCommitPhaseTwo(Pager *pPager){
   int rc = SQLITE_OK;                  /* Return code */
-  //printf("[TRACE] sqlite3PagerCommitPhaseTwo: Starting Phase 2 of Commit\n");
+  printf("[TRACE] sqlite3PagerCommitPhaseTwo: Starting Phase 2 of Commit\n");
 
   /* This routine should not be called if a prior error has occurred.
   ** But if (due to a coding error elsewhere in the system) it does get

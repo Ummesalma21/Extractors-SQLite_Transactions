@@ -3692,7 +3692,7 @@ Pgno sqlite3WalDbsize(Wal *pWal){
 */
 int sqlite3WalBeginWriteTransaction(Wal *pWal){
   int rc;
-  //printf("[TRACE] sqlite3WalBeginWriteTransaction: Starting WAL write transaction\n");
+  printf("[TRACE] sqlite3WalBeginWriteTransaction: Starting WAL write transaction\n");
 
 #ifdef SQLITE_ENABLE_SETLK_TIMEOUT
   /* If the write-lock is already held, then it was obtained before the
