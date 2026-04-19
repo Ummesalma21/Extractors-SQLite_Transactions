@@ -1,0 +1,7 @@
+[TRACE] sqlite3PagerBegin: Acquiring database lock (Phase: 0)
+[TRACE] pagerLockDb: Escalating lock to 1
+[TRACE] pagerLockDb: Escalating lock to 2
+[TRACE] sqlite3BtreeInsert: Inserting row/cell into B-Tree
+[TRACE] pagerLockDb: Escalating lock to 4
+[TRACE] sqlite3PagerCommitPhaseOne: Starting Phase 1 of Commit
+[TRACE] sqlite3PagerCommitPhaseTwo: Starting Phase 2 of Commit
