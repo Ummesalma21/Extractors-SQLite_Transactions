@@ -846,6 +846,7 @@ static const char *vdbeMemTypeName(Mem *pMem){
 int sqlite3VdbeExec(
   Vdbe *p                    /* The VDBE */
 ){
+  printf("[TRACE] sqlite3VdbeExec: Starting VDBE execution\n");
   Op *aOp = p->aOp;          /* Copy of p->aOp */
   Op *pOp = aOp;             /* Current operation */
 #ifdef SQLITE_DEBUG
@@ -4011,6 +4012,7 @@ case OP_Savepoint: {
 ** This instruction causes the VM to halt.
 */
 case OP_AutoCommit: {
+  printf("[TRACE] OP_AutoCommit: Handling autocommit/transaction completion (P1=%d, P2=%d)\n", pOp->p1, pOp->p2);
   int desiredAutoCommit;
   int iRollback;
 
@@ -4100,6 +4102,7 @@ case OP_AutoCommit: {
 ** statement and rerun it from the beginning.
 */
 case OP_Transaction: {
+  printf("[TRACE] OP_Transaction: Starting/Upgrading transaction on DB %d (P2=%d)\n", pOp->p1, pOp->p2);
   Btree *pBt;
   Db *pDb;
   int iMeta = 0;
