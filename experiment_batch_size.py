@@ -47,7 +47,7 @@ def build_sql(batch_size: int) -> str:
     return "\n".join(lines) + "\n"
 
 
-def run_batch(sqlite_bin: Path, batch_size: int) -> tuple[float, int, int]:
+def run_batch(sqlite_bin: Path, batch_size: int) -> tuple[float, int, int, str]:
     db_path = RESULTS_DIR / f"batch_{batch_size}.db"
     for suffix in ["", "-journal", "-wal", "-shm"]:
         path = Path(str(db_path) + suffix)
@@ -70,8 +70,13 @@ def run_batch(sqlite_bin: Path, batch_size: int) -> tuple[float, int, int]:
         path = Path(str(db_path) + suffix)
         if path.exists():
             path.unlink()
+    
+    # Extract first 20 trace lines if available
+    trace_lines = [line for line in result.stdout.split('\n') if "[SQLITE_TRACE]" in line][:20]
+    trace_sample = '\n'.join(trace_lines)
+    
     commits = (TOTAL_ROWS + batch_size - 1) // batch_size
-    return elapsed, commits, trace_count
+    return elapsed, commits, trace_count, trace_sample
 
 
 def main() -> int:
@@ -88,10 +93,14 @@ def main() -> int:
         "-" * 62,
     ]
 
+    trace_sample = None
     for batch_size in BATCH_SIZES:
-        elapsed, commits, trace_count = run_batch(sqlite_bin, batch_size)
+        elapsed, commits, trace_count, sample = run_batch(sqlite_bin, batch_size)
         rows_per_sec = TOTAL_ROWS / elapsed
         lines.append(f"{batch_size:>12} {elapsed:>10.3f} {rows_per_sec:>12,.0f} {commits:>10} {trace_count:>12}")
+        # Capture trace sample from a representative run (batch size 100)
+        if batch_size == 100 and sample and not trace_sample:
+            trace_sample = sample
 
     lines.extend([
         "",
@@ -99,6 +108,15 @@ def main() -> int:
         "line counts come from the modified pager.c and btree.c paths in the",
         "custom SQLite binary, but timing is machine-dependent.",
     ])
+    
+    # Add sample trace section
+    if trace_sample:
+        lines.extend([
+            "",
+            "Sample source trace lines (batch size 100):",
+            "-" * 40,
+            trace_sample,
+        ])
 
     OUTPUT_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))

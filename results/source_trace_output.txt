@@ -3,19 +3,19 @@
 [SQLITE_TRACE] pager.c:hasHotJournal begin state=0 lock=1 journalMode=0 journalOpen=0
 [SQLITE_TRACE] pager.c:hasHotJournal access rc=0 exists=0 journalOpen=0
 [SQLITE_TRACE] pager.c:hasHotJournal complete rc=0 hotJournal=0 state=0 lock=1
-[TRACE] sqlite3VdbeExec: Starting VDBE execution
-[TRACE] OP_Transaction: Starting/Upgrading transaction on DB 0 (P2=0)
-[TRACE] sqlite3VdbeExec: Starting VDBE execution
+[SQLITE_TRACE] sqlite3VdbeExec: Starting VDBE execution
+[SQLITE_TRACE] OP_Transaction: Starting/Upgrading transaction on DB 0 (P2=0)
+[SQLITE_TRACE] sqlite3VdbeExec: Starting VDBE execution
 delete
-[TRACE] sqlite3VdbeExec: Starting VDBE execution
-[TRACE] sqlite3VdbeExec: Starting VDBE execution
+[SQLITE_TRACE] sqlite3VdbeExec: Starting VDBE execution
+[SQLITE_TRACE] sqlite3VdbeExec: Starting VDBE execution
 [SQLITE_TRACE] pager.c:pagerLockDb request state=0 oldLock=0 newLock=1 journalMode=0 wal=0
 [SQLITE_TRACE] pager.c:pagerLockDb complete rc=0 state=0 oldLock=0 currentLock=1 requestedLock=1
 [SQLITE_TRACE] pager.c:hasHotJournal begin state=0 lock=1 journalMode=0 journalOpen=0
 [SQLITE_TRACE] pager.c:hasHotJournal access rc=0 exists=0 journalOpen=0
 [SQLITE_TRACE] pager.c:hasHotJournal complete rc=0 hotJournal=0 state=0 lock=1
-[TRACE] sqlite3VdbeExec: Starting VDBE execution
-[TRACE] OP_Transaction: Starting/Upgrading transaction on DB 0 (P2=0)
+[SQLITE_TRACE] sqlite3VdbeExec: Starting VDBE execution
+[SQLITE_TRACE] OP_Transaction: Starting/Upgrading transaction on DB 0 (P2=0)
 [SQLITE_TRACE] pager.c:pagerLockDb request state=0 oldLock=0 newLock=1 journalMode=0 wal=0
 [SQLITE_TRACE] pager.c:pagerLockDb complete rc=0 state=0 oldLock=0 currentLock=1 requestedLock=1
 [SQLITE_TRACE] pager.c:hasHotJournal begin state=0 lock=1 journalMode=0 journalOpen=0
@@ -46,13 +46,13 @@ delete
 [SQLITE_TRACE] pager.c:sqlite3PagerCommitPhaseOne complete rc=0 state=5 lock=4 journalMode=0 wal=0
 [SQLITE_TRACE] pager.c:sqlite3PagerCommitPhaseTwo begin state=5 lock=4 journalMode=0 wal=0
 [SQLITE_TRACE] pager.c:sqlite3PagerCommitPhaseTwo complete rc=0 state=1 lock=1 journalMode=0 wal=0
-[TRACE] sqlite3VdbeExec: Starting VDBE execution
-[TRACE] OP_Transaction: Starting/Upgrading transaction on DB 0 (P2=1)
-[TRACE] sqlite3VdbeExec: Starting VDBE execution
-[TRACE] OP_Transaction: Starting/Upgrading transaction on DB 0 (P2=0)
-[TRACE] sqlite3VdbeExec: Starting VDBE execution
-[TRACE] sqlite3VdbeExec: Starting VDBE execution
-[TRACE] OP_AutoCommit: Handling autocommit/transaction completion (P1=0, P2=0)
+[SQLITE_TRACE] sqlite3VdbeExec: Starting VDBE execution
+[SQLITE_TRACE] OP_Transaction: Starting/Upgrading transaction on DB 0 (P2=1)
+[SQLITE_TRACE] sqlite3VdbeExec: Starting VDBE execution
+[SQLITE_TRACE] OP_Transaction: Starting/Upgrading transaction on DB 0 (P2=0)
+[SQLITE_TRACE] sqlite3VdbeExec: Starting VDBE execution
+[SQLITE_TRACE] sqlite3VdbeExec: Starting VDBE execution
+[SQLITE_TRACE] OP_AutoCommit: Handling autocommit/transaction completion (P1=0, P2=0)
 [SQLITE_TRACE] pager.c:pagerLockDb request state=0 oldLock=0 newLock=1 journalMode=0 wal=0
 [SQLITE_TRACE] pager.c:pagerLockDb complete rc=0 state=0 oldLock=0 currentLock=1 requestedLock=1
 [SQLITE_TRACE] pager.c:hasHotJournal begin state=0 lock=1 journalMode=0 journalOpen=0
@@ -68,8 +68,8 @@ delete
 [SQLITE_TRACE] btree.c:sqlite3BtreeInsert storage-layer insertCellFast begin root=2 page=2 idx=0
 [SQLITE_TRACE] btree.c:sqlite3BtreeInsert storage-layer insertCellFast complete rc=0 root=2 page=2 idx=0
 [SQLITE_TRACE] btree.c:sqlite3BtreeInsert complete rc=0 root=2 finalPage=2
-[TRACE] sqlite3VdbeExec: Starting VDBE execution
-[TRACE] OP_Transaction: Starting/Upgrading transaction on DB 0 (P2=1)
+[SQLITE_TRACE] sqlite3VdbeExec: Starting VDBE execution
+[SQLITE_TRACE] OP_Transaction: Starting/Upgrading transaction on DB 0 (P2=1)
 [SQLITE_TRACE] pager.c:pagerLockDb request state=3 oldLock=2 newLock=4 journalMode=0 wal=0
 [SQLITE_TRACE] pager.c:pagerLockDb complete rc=0 state=3 oldLock=2 currentLock=4 requestedLock=4
 [SQLITE_TRACE] pager.c:sqlite3PagerCommitPhaseOne begin state=3 lock=4 journalMode=0 wal=0 noSync=0 dbSize=2 dbOrigSize=2
@@ -78,14 +78,14 @@ delete
 [SQLITE_TRACE] pager.c:sqlite3PagerCommitPhaseOne complete rc=0 state=5 lock=4 journalMode=0 wal=0
 [SQLITE_TRACE] pager.c:sqlite3PagerCommitPhaseTwo begin state=5 lock=4 journalMode=0 wal=0
 [SQLITE_TRACE] pager.c:sqlite3PagerCommitPhaseTwo complete rc=0 state=1 lock=1 journalMode=0 wal=0
-[TRACE] sqlite3VdbeExec: Starting VDBE execution
-[TRACE] OP_AutoCommit: Handling autocommit/transaction completion (P1=1, P2=0)
+[SQLITE_TRACE] sqlite3VdbeExec: Starting VDBE execution
+[SQLITE_TRACE] OP_AutoCommit: Handling autocommit/transaction completion (P1=1, P2=0)
 [SQLITE_TRACE] pager.c:pagerLockDb request state=0 oldLock=0 newLock=1 journalMode=0 wal=0
 [SQLITE_TRACE] pager.c:pagerLockDb complete rc=0 state=0 oldLock=0 currentLock=1 requestedLock=1
 [SQLITE_TRACE] pager.c:hasHotJournal begin state=0 lock=1 journalMode=0 journalOpen=0
 [SQLITE_TRACE] pager.c:hasHotJournal access rc=0 exists=0 journalOpen=0
 [SQLITE_TRACE] pager.c:hasHotJournal complete rc=0 hotJournal=0 state=0 lock=1
-[TRACE] sqlite3VdbeExec: Starting VDBE execution
-[TRACE] OP_Transaction: Starting/Upgrading transaction on DB 0 (P2=0)
+[SQLITE_TRACE] sqlite3VdbeExec: Starting VDBE execution
+[SQLITE_TRACE] OP_Transaction: Starting/Upgrading transaction on DB 0 (P2=0)
 1
-[TRACE] sqlite3VdbeExec: Starting VDBE execution
+[SQLITE_TRACE] sqlite3VdbeExec: Starting VDBE execution

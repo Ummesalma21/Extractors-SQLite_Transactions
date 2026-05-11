@@ -66,6 +66,21 @@ def run_mode(sqlite_bin: Path, journal_mode: str) -> dict[str, float | int | str
         raise RuntimeError(result.stdout)
 
     output = result.stdout
+    
+    # Extract trace lines relevant to commit operations
+    trace_lines = [line for line in output.split('\n') if "[SQLITE_TRACE]" in line]
+    pager_commit_lines = [line for line in trace_lines if "pager.c:sqlite3Pager" in line]
+    wal_lines = [line for line in trace_lines if "wal.c:" in line]
+    
+    # Get first 5 relevant lines for each mode
+    sample_lines = []
+    if journal_mode == "DELETE":
+        sample_lines = pager_commit_lines[:5]
+    else:  # WAL
+        sample_lines = wal_lines[:5]
+    
+    trace_sample = '\n'.join(sample_lines)
+    
     metrics = {
         "mode": journal_mode,
         "elapsed": elapsed,
@@ -74,6 +89,7 @@ def run_mode(sqlite_bin: Path, journal_mode: str) -> dict[str, float | int | str
         "pager_commit_phase_two": output.count("pager.c:sqlite3PagerCommitPhaseTwo begin"),
         "wal_begin": output.count("wal.c:sqlite3WalBeginWriteTransaction begin"),
         "wal_frames": output.count("wal.c:walFrames begin"),
+        "trace_sample": trace_sample,
     }
 
     for suffix in ["", "-journal", "-wal", "-shm"]:
@@ -108,6 +124,25 @@ def main() -> int:
         "logs. DELETE mode should primarily show rollback-journal pager commit",
         "logs. Timing is machine-dependent and should be regenerated locally.",
     ])
+    
+    # Add trace samples
+    lines.append("")
+    lines.append("Sample DELETE trace lines (rollback journal):")
+    lines.append("-" * 40)
+    delete_sample = next((r['trace_sample'] for r in rows if r['mode'] == 'DELETE'), '')
+    if delete_sample:
+        lines.append(delete_sample)
+    else:
+        lines.append("(no pager.c traces captured)")
+    
+    lines.append("")
+    lines.append("Sample WAL trace lines:")
+    lines.append("-" * 40)
+    wal_sample = next((r['trace_sample'] for r in rows if r['mode'] == 'WAL'), '')
+    if wal_sample:
+        lines.append(wal_sample)
+    else:
+        lines.append("(no wal.c traces captured)")
 
     OUTPUT_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))

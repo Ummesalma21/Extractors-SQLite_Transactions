@@ -4,9 +4,25 @@ Rows: 2000, batch size: 200
 
     Mode   Time (s)    Trace   Pager P1   Pager P2  WAL begin WAL frames
 ----------------------------------------------------------------------------
-  DELETE      0.031    10225         11         11          0          0
-     WAL      0.015    10196         12         12         11         11
+  DELETE      0.027    14280         11         11          0          0
+     WAL      0.016    14251         12         12         11         11
 
 Interpretation: WAL mode should show wal.c write-transaction and frame
 logs. DELETE mode should primarily show rollback-journal pager commit
 logs. Timing is machine-dependent and should be regenerated locally.
+
+Sample DELETE trace lines (rollback journal):
+----------------------------------------
+[SQLITE_TRACE] pager.c:sqlite3PagerBegin begin state=1 lock=1 exFlag=0 subjInMemory=0 journalMode=0 wal=0
+[SQLITE_TRACE] pager.c:sqlite3PagerBegin rollback-lock rc=0 state=1 lock=2
+[SQLITE_TRACE] pager.c:sqlite3PagerBegin complete rc=0 state=2 lock=2 journalMode=0 wal=0
+[SQLITE_TRACE] pager.c:sqlite3PagerCommitPhaseOne begin state=3 lock=4 journalMode=0 wal=0 noSync=0 dbSize=2 dbOrigSize=0
+[SQLITE_TRACE] pager.c:sqlite3PagerCommitPhaseOne complete rc=0 state=5 lock=4 journalMode=0 wal=0
+
+Sample WAL trace lines:
+----------------------------------------
+[SQLITE_TRACE] wal.c:sqlite3WalBeginWriteTransaction begin readLock=0 writeLock=0 mxFrame=0 nPage=0 readOnly=0
+[SQLITE_TRACE] wal.c:sqlite3WalBeginWriteTransaction complete rc=0 readLock=0 writeLock=1 mxFrame=0 nPage=0
+[SQLITE_TRACE] wal.c:sqlite3WalFrames begin isCommit=1 nTruncate=2 syncFlags=0x8
+[SQLITE_TRACE] wal.c:walFrames begin frames=2 isCommit=1 nTruncate=2 mxFrame=0 syncFlags=0x8
+[SQLITE_TRACE] wal.c:walFrames commit-index mxFrame=2 nPage=2 callback=2

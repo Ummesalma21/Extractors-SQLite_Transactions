@@ -5,12 +5,35 @@ Mode: rollback journal (DELETE), synchronous=NORMAL
 
   Batch Size   Time (s)     Rows/sec    Commits  Trace lines
 --------------------------------------------------------------
-           1      1.822        1,098       2000        46045
-          10      0.197       10,177        200        13645
-         100      0.034       59,698         20        10405
-         500      0.018      112,339          4        10117
-        2000      0.014      145,266          1        10063
+           1      1.933        1,035       2000        58060
+          10      0.205        9,774        200        18460
+         100      0.035       56,923         20        14500
+         500      0.019      104,664          4        14148
+        2000      0.015      137,879          1        14082
 
 Interpretation: larger batches reduce the number of commits. The trace
 line counts come from the modified pager.c and btree.c paths in the
 custom SQLite binary, but timing is machine-dependent.
+
+Sample source trace lines (batch size 100):
+----------------------------------------
+[SQLITE_TRACE] pager.c:pagerLockDb request state=0 oldLock=0 newLock=1 journalMode=0 wal=0
+[SQLITE_TRACE] pager.c:pagerLockDb complete rc=0 state=0 oldLock=0 currentLock=1 requestedLock=1
+[SQLITE_TRACE] pager.c:hasHotJournal begin state=0 lock=1 journalMode=0 journalOpen=0
+[SQLITE_TRACE] pager.c:hasHotJournal access rc=0 exists=0 journalOpen=0
+[SQLITE_TRACE] pager.c:hasHotJournal complete rc=0 hotJournal=0 state=0 lock=1
+[SQLITE_TRACE] sqlite3VdbeExec: Starting VDBE execution
+[SQLITE_TRACE] OP_Transaction: Starting/Upgrading transaction on DB 0 (P2=0)
+[SQLITE_TRACE] sqlite3VdbeExec: Starting VDBE execution
+[SQLITE_TRACE] sqlite3VdbeExec: Starting VDBE execution
+[SQLITE_TRACE] sqlite3VdbeExec: Starting VDBE execution
+[SQLITE_TRACE] pager.c:pagerLockDb request state=0 oldLock=0 newLock=1 journalMode=0 wal=0
+[SQLITE_TRACE] pager.c:pagerLockDb complete rc=0 state=0 oldLock=0 currentLock=1 requestedLock=1
+[SQLITE_TRACE] pager.c:hasHotJournal begin state=0 lock=1 journalMode=0 journalOpen=0
+[SQLITE_TRACE] pager.c:hasHotJournal access rc=0 exists=0 journalOpen=0
+[SQLITE_TRACE] pager.c:hasHotJournal complete rc=0 hotJournal=0 state=0 lock=1
+[SQLITE_TRACE] sqlite3VdbeExec: Starting VDBE execution
+[SQLITE_TRACE] OP_Transaction: Starting/Upgrading transaction on DB 0 (P2=0)
+[SQLITE_TRACE] pager.c:pagerLockDb request state=0 oldLock=0 newLock=1 journalMode=0 wal=0
+[SQLITE_TRACE] pager.c:pagerLockDb complete rc=0 state=0 oldLock=0 currentLock=1 requestedLock=1
+[SQLITE_TRACE] pager.c:hasHotJournal begin state=0 lock=1 journalMode=0 journalOpen=0
