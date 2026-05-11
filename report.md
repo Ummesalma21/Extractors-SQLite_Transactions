@@ -52,9 +52,10 @@ The B-tree layer does not manage filesystem locking or crash recovery directly. 
 
 Instrumentation was added to:
 
-- `sqlite-master/src/pager.c`
-- `sqlite-master/src/btree.c`
-- `sqlite-master/src/wal.c`
+- `sqlite-master/src/vdbe.c`: transaction opcodes (`sqlite3VdbeExec`, `OP_Transaction`, `OP_AutoCommit`)
+- `sqlite-master/src/pager.c`: pager state, locking, commit, recovery
+- `sqlite-master/src/btree.c`: B-tree insert path
+- `sqlite-master/src/wal.c`: WAL write transaction and frame path
 
 The modified functions emit `[SQLITE_TRACE]` logs from source code. The main source-instrumented experiment is `experiment_execution_trace.py`, which runs `build/sqlite3_custom` and saves captured output to `results/source_trace_output.txt`.
 

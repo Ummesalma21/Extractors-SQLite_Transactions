@@ -1,6 +1,6 @@
 # SQLite Transactions Source-Instrumentation Project
 
-This project studies SQLite transactions through source-code instrumentation, not only through black-box Python experiments. The modified SQLite source emits `[SQLITE_TRACE]` logs from the B-tree, pager, rollback-journal, and WAL paths.
+This project studies SQLite transactions through source-code instrumentation, not only through black-box Python experiments. The modified SQLite source emits `[SQLITE_TRACE]` logs from the SQL execution engine (VDBE), B-tree, pager, rollback-journal, and WAL paths.
 
 ## Project Goal
 
@@ -54,6 +54,7 @@ Output:
 
 ## File Structure
 
+- `sqlite-master/src/vdbe.c`: VDBE (SQL execution engine) transaction opcode instrumentation (`sqlite3VdbeExec`, `OP_Transaction`, `OP_AutoCommit`)
 - `sqlite-master/src/pager.c`: pager state, locking, commit, rollback-journal recovery instrumentation
 - `sqlite-master/src/btree.c`: `sqlite3BtreeInsert()` instrumentation
 - `sqlite-master/src/wal.c`: WAL write transaction and frame instrumentation

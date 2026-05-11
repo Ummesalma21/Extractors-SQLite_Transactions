@@ -4,12 +4,16 @@
 
 The SQLite source instrumentation is in these files:
 
+- `sqlite-master/src/vdbe.c`
 - `sqlite-master/src/pager.c`
 - `sqlite-master/src/btree.c`
 - `sqlite-master/src/wal.c`
 
 Functions modified:
 
+- `vdbe.c:sqlite3VdbeExec()` logs VDBE execution start.
+- `vdbe.c:OP_Transaction` logs transaction begin/upgrade and database selection.
+- `vdbe.c:OP_AutoCommit` logs autocommit/transaction completion state.
 - `pager.c:sqlite3PagerBegin()` logs transaction begin, pager state, lock level, journal mode, and whether the pager is using WAL.
 - `pager.c:pagerLockDb()` logs requested lock transitions and the resulting lock level.
 - `pager.c:sqlite3PagerCommitPhaseOne()` logs commit phase one begin/complete, pager state, lock level, journal mode, WAL flag, and database size fields.
@@ -105,4 +109,4 @@ The script saves:
 
 `diffs/sqlite_trace_instrumentation.diff`
 
-That diff shows the source-code changes in `sqlite-master/src/pager.c`, `sqlite-master/src/btree.c`, and `sqlite-master/src/wal.c`.
+That diff shows the source-code changes in `sqlite-master/src/vdbe.c`, `sqlite-master/src/pager.c`, `sqlite-master/src/btree.c`, and `sqlite-master/src/wal.c`.
