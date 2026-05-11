@@ -158,26 +158,34 @@ Output: `results/wal_vs_rollback_output.txt`
 
 Setup from the result file:
 
-- Rows: `2000`
+- Rows: `5000`
 - Batch size: `200`
+- Expected insert transactions: `25`
+- SQLite binary: `build/sqlite3_custom`
+- Concurrent reader busy timeout: `50ms`
+
+The same write workload was executed twice: once in DELETE rollback-journal mode and once in WAL mode. The experiment combined source-code trace evidence with a concurrent reader that repeatedly issued `SELECT COUNT(*) FROM data` while the writer was active.
 
 Observed comparison:
 
-| Mode | Time (s) | Trace lines | Pager P1 | Pager P2 | WAL begin | WAL frames |
-|---|---:|---:|---:|---:|---:|---:|
-| DELETE | 0.027 | 14280 | 11 | 11 | 0 | 0 |
-| WAL | 0.016 | 14251 | 12 | 12 | 11 | 11 |
+| Mode | Time (s) | Successful reads | Blocked reads | Trace lines | Pager P1 | Pager P2 | WAL begin | WAL frames |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| DELETE | 0.077 | 35 | 1 | 35582 | 25 | 25 | 0 | 0 |
+| WAL | 0.047 | 47 | 0 | 35472 | 25 | 25 | 25 | 25 |
 
-DELETE mode primarily showed pager commit activity, with `11` commit phase-one traces and `11` commit phase-two traces, and no WAL begin/frame traces. WAL mode showed `11` WAL write-transaction begins and `11` WAL frame writes, proving that WAL mode used a different transaction durability path.
+Both modes still passed through pager commit phase one and phase two exactly `25` times. That is expected because the pager coordinates commit ordering and locking in both rollback-journal and WAL mode; WAL mode additionally enters the WAL write path in `wal.c`.
 
-Example WAL evidence from the result file:
+DELETE mode showed `0` WAL begin traces and `0` WAL frame traces. WAL mode showed `25` WAL begin traces and `25` WAL frame traces, proving that WAL mode entered `wal.c` and used append-based WAL frame writes instead of only relying on the rollback-journal commit path.
+
+Example trace snippets:
 
 ```text
-[SQLITE_TRACE] wal.c:sqlite3WalBeginWriteTransaction begin readLock=0 writeLock=0 mxFrame=0 nPage=0 readOnly=0
-[SQLITE_TRACE] wal.c:walFrames commit-index mxFrame=2 nPage=2 callback=2
+[SQLITE_TRACE] pager.c:sqlite3PagerCommitPhaseOne begin ... journalMode=0 wal=0
+[SQLITE_TRACE] wal.c:sqlite3WalBeginWriteTransaction begin ...
+[SQLITE_TRACE] wal.c:walFrames begin frames=10 isCommit=1 ...
 ```
 
-Timing is machine-dependent. The stronger evidence is the difference in source-level paths: rollback journal uses pager commit without WAL frame logs, while WAL mode enters the WAL write and frame-commit code.
+Observed behavior also supports the WAL concurrency tradeoff: DELETE mode had `35` successful reads and `1` blocked read, while WAL mode had `47` successful reads and `0` blocked reads. Timings and read counts are machine-dependent, but the trend is consistent with WAL allowing readers to continue more smoothly during writer activity.
 
 ### What We Learned
 
