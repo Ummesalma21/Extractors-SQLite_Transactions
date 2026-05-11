@@ -1,0 +1,601 @@
+diff --git a/sqlite-master/src/btree.c b/sqlite-master/src/btree.c
+index e65e517..a5be45c 100644
+--- a/sqlite-master/src/btree.c
++++ b/sqlite-master/src/btree.c
+@@ -9396,16 +9396,20 @@ int sqlite3BtreeInsert(
+   const BtreePayload *pX,        /* Content of the row to be inserted */
+   int flags,                     /* True if this is likely an append */
+   int seekResult                 /* Result of prior IndexMoveto() call */
+-){
+-  int rc;
+-  printf("[TRACE] sqlite3BtreeInsert: Inserting row/cell into B-Tree\n");
+-  int loc = seekResult;          /* -1: before desired location  +1: after */
+-  int szNew = 0;
++){
++  int rc;
++  int loc = seekResult;          /* -1: before desired location  +1: after */
++  int szNew = 0;
+   int idx;
+   MemPage *pPage;
+-  Btree *p = pCur->pBtree;
+-  unsigned char *oldCell;
+-  unsigned char *newCell = 0;
++  Btree *p = pCur->pBtree;
++  unsigned char *oldCell;
++  unsigned char *newCell = 0;
++
++  fprintf(stderr,
++    "[SQLITE_TRACE] btree.c:sqlite3BtreeInsert begin root=%u cursorPage=%u key=%lld nData=%u flags=0x%x seekResult=%d\n",
++    pCur->pgnoRoot, pCur->pPage ? pCur->pPage->pgno : 0,
++    pX->nKey, pX->nData, flags, seekResult);
+ 
+   assert( (flags & (BTREE_SAVEPOSITION|BTREE_APPEND|BTREE_PREFORMAT))==flags );
+   assert( (flags & BTREE_PREFORMAT)==0 || seekResult || pCur->pKeyInfo==0 );
+@@ -9560,10 +9564,14 @@ int sqlite3BtreeInsert(
+     if( rc ) return rc;
+   }
+ 
+-  TRACE(("INSERT: table=%u nkey=%lld ndata=%u page=%u %s\n",
+-          pCur->pgnoRoot, pX->nKey, pX->nData, pPage->pgno,
+-          loc==0 ? "overwrite" : "new entry"));
+-  assert( pPage->isInit || CORRUPT_DB );
++  TRACE(("INSERT: table=%u nkey=%lld ndata=%u page=%u %s\n",
++          pCur->pgnoRoot, pX->nKey, pX->nData, pPage->pgno,
++          loc==0 ? "overwrite" : "new entry"));
++  fprintf(stderr,
++    "[SQLITE_TRACE] btree.c:sqlite3BtreeInsert storage-path root=%u page=%u nCell=%d freeBytes=%d mode=%s\n",
++    pCur->pgnoRoot, pPage->pgno, pPage->nCell, pPage->nFree,
++    loc==0 ? "overwrite" : "new-cell");
++  assert( pPage->isInit || CORRUPT_DB );
+   newCell = p->pBt->pTmpSpace;
+   assert( newCell!=0 );
+   assert( BTREE_PREFORMAT==OPFLAG_PREFORMAT );
+@@ -9594,13 +9602,19 @@ int sqlite3BtreeInsert(
+   if( loc==0 ){
+     CellInfo info;
+     assert( idx>=0 );
+-    if( idx>=pPage->nCell ){
+-      return SQLITE_CORRUPT_PAGE(pPage);
+-    }
+-    rc = sqlite3PagerWrite(pPage->pDbPage);
+-    if( rc ){
+-      goto end_insert;
+-    }
++    if( idx>=pPage->nCell ){
++      return SQLITE_CORRUPT_PAGE(pPage);
++    }
++    fprintf(stderr,
++      "[SQLITE_TRACE] btree.c:sqlite3BtreeInsert pager-write begin root=%u page=%u idx=%d\n",
++      pCur->pgnoRoot, pPage->pgno, idx);
++    rc = sqlite3PagerWrite(pPage->pDbPage);
++    fprintf(stderr,
++      "[SQLITE_TRACE] btree.c:sqlite3BtreeInsert pager-write complete rc=%d root=%u page=%u idx=%d\n",
++      rc, pCur->pgnoRoot, pPage->pgno, idx);
++    if( rc ){
++      goto end_insert;
++    }
+     oldCell = findCell(pPage, idx);
+     if( !pPage->leaf ){
+       memcpy(newCell, oldCell, 4);
+@@ -9639,7 +9653,13 @@ int sqlite3BtreeInsert(
+   }else{
+     assert( pPage->leaf );
+   }
+-  rc = insertCellFast(pPage, idx, newCell, szNew);
++  fprintf(stderr,
++    "[SQLITE_TRACE] btree.c:sqlite3BtreeInsert storage-layer insertCellFast begin root=%u page=%u idx=%d\n",
++    pCur->pgnoRoot, pPage->pgno, idx);
++  rc = insertCellFast(pPage, idx, newCell, szNew);
++  fprintf(stderr,
++    "[SQLITE_TRACE] btree.c:sqlite3BtreeInsert storage-layer insertCellFast complete rc=%d root=%u page=%u idx=%d\n",
++    rc, pCur->pgnoRoot, pPage->pgno, idx);
+   assert( pPage->nOverflow==0 || rc==SQLITE_OK );
+   assert( rc!=SQLITE_OK || pPage->nCell>0 || pPage->nOverflow>0 );
+ 
+@@ -9691,9 +9711,12 @@ int sqlite3BtreeInsert(
+   }
+   assert( pCur->iPage<0 || pCur->pPage->nOverflow==0 );
+ 
+-end_insert:
+-  return rc;
+-}
++end_insert:
++  fprintf(stderr,
++    "[SQLITE_TRACE] btree.c:sqlite3BtreeInsert complete rc=%d root=%u finalPage=%u\n",
++    rc, pCur->pgnoRoot, pCur->pPage ? pCur->pPage->pgno : 0);
++  return rc;
++}
+ 
+ /*
+ ** This function is used as part of copying the current row from cursor
+diff --git a/sqlite-master/src/pager.c b/sqlite-master/src/pager.c
+index bde48fc..6cb7007 100644
+--- a/sqlite-master/src/pager.c
++++ b/sqlite-master/src/pager.c
+@@ -1158,20 +1158,27 @@ static int pagerUnlockDb(Pager *pPager, int eLock){
+ ** See the comment above the #define of UNKNOWN_LOCK for an explanation
+ ** of this.
+ */
+-static int pagerLockDb(Pager *pPager, int eLock){
+-  int rc = SQLITE_OK;
+-  printf("[TRACE] pagerLockDb: Escalating lock to %d\n", eLock);
+-
+-  assert( eLock==SHARED_LOCK || eLock==RESERVED_LOCK || eLock==EXCLUSIVE_LOCK );
+-  if( pPager->eLock<eLock || pPager->eLock==UNKNOWN_LOCK ){
+-    rc = pPager->noLock ? SQLITE_OK : sqlite3OsLock(pPager->fd, eLock);
+-    if( rc==SQLITE_OK && (pPager->eLock!=UNKNOWN_LOCK||eLock==EXCLUSIVE_LOCK) ){
+-      pPager->eLock = (u8)eLock;
+-      IOTRACE(("LOCK %p %d\n", pPager, eLock))
+-    }
+-  }
+-  return rc;
+-}
++static int pagerLockDb(Pager *pPager, int eLock){
++  int rc = SQLITE_OK;
++  int oldLock = pPager->eLock;
++
++  fprintf(stderr,
++    "[SQLITE_TRACE] pager.c:pagerLockDb request state=%d oldLock=%d newLock=%d journalMode=%d wal=%d\n",
++    pPager->eState, oldLock, eLock, pPager->journalMode, pagerUseWal(pPager));
++
++  assert( eLock==SHARED_LOCK || eLock==RESERVED_LOCK || eLock==EXCLUSIVE_LOCK );
++  if( pPager->eLock<eLock || pPager->eLock==UNKNOWN_LOCK ){
++    rc = pPager->noLock ? SQLITE_OK : sqlite3OsLock(pPager->fd, eLock);
++    if( rc==SQLITE_OK && (pPager->eLock!=UNKNOWN_LOCK||eLock==EXCLUSIVE_LOCK) ){
++      pPager->eLock = (u8)eLock;
++      IOTRACE(("LOCK %p %d\n", pPager, eLock))
++    }
++  }
++  fprintf(stderr,
++    "[SQLITE_TRACE] pager.c:pagerLockDb complete rc=%d state=%d oldLock=%d currentLock=%d requestedLock=%d\n",
++    rc, pPager->eState, oldLock, pPager->eLock, eLock);
++  return rc;
++}
+ 
+ /*
+ ** This function determines whether or not the atomic-write or
+@@ -4695,13 +4702,12 @@ int sqlite3PagerFlush(Pager *pPager){
+         rc = pagerStress((void*)pPager, pList);
+       }
+       pList = pNext;
+-    }
+-  }
+-
+-  return rc;
+-}
+-
+-/*
++    }
++  }
++  return rc;
++}
++
++/*
+ ** Allocate and initialize a new Pager object and put a pointer to it
+ ** in *ppPager. The pager should eventually be freed by passing it
+ ** to sqlite3PagerClose().
+@@ -5132,11 +5138,15 @@ sqlite3_file *sqlite3_database_file_object(const char *zName){
+ ** to determine whether or not a hot-journal file exists, the IO error
+ ** code is returned and the value of *pExists is undefined.
+ */
+-static int hasHotJournal(Pager *pPager, int *pExists){
+-  sqlite3_vfs * const pVfs = pPager->pVfs;
+-  int rc = SQLITE_OK;           /* Return code */
+-  int exists = 1;               /* True if a journal file is present */
+-  int jrnlOpen = !!isOpen(pPager->jfd);
++static int hasHotJournal(Pager *pPager, int *pExists){
++  sqlite3_vfs * const pVfs = pPager->pVfs;
++  int rc = SQLITE_OK;           /* Return code */
++  int exists = 1;               /* True if a journal file is present */
++  int jrnlOpen = !!isOpen(pPager->jfd);
++
++  fprintf(stderr,
++    "[SQLITE_TRACE] pager.c:hasHotJournal begin state=%d lock=%d journalMode=%d journalOpen=%d\n",
++    pPager->eState, pPager->eLock, pPager->journalMode, jrnlOpen);
+ 
+   assert( pPager->useJournal );
+   assert( isOpen(pPager->fd) );
+@@ -5147,10 +5157,13 @@ static int hasHotJournal(Pager *pPager, int *pExists){
+   ));
+ 
+   *pExists = 0;
+-  if( !jrnlOpen ){
+-    rc = sqlite3OsAccess(pVfs, pPager->zJournal, SQLITE_ACCESS_EXISTS, &exists);
+-  }
+-  if( rc==SQLITE_OK && exists ){
++  if( !jrnlOpen ){
++    rc = sqlite3OsAccess(pVfs, pPager->zJournal, SQLITE_ACCESS_EXISTS, &exists);
++  }
++  fprintf(stderr,
++    "[SQLITE_TRACE] pager.c:hasHotJournal access rc=%d exists=%d journalOpen=%d\n",
++    rc, exists, jrnlOpen);
++  if( rc==SQLITE_OK && exists ){
+     int locked = 0;             /* True if some process holds a RESERVED lock */
+ 
+     /* Race condition here:  Another process might have been holding the
+@@ -5162,7 +5175,7 @@ static int hasHotJournal(Pager *pPager, int *pExists){
+     ** be dealt with by the playback routine.  Ticket #3883.
+     */
+     rc = sqlite3OsCheckReservedLock(pPager->fd, &locked);
+-    if( rc==SQLITE_OK && !locked ){
++    if( rc==SQLITE_OK && !locked ){
+       Pgno nPage;                 /* Number of pages in database file */
+ 
+       assert( pPager->tempFile==0 );
+@@ -5183,17 +5196,17 @@ static int hasHotJournal(Pager *pPager, int *pExists){
+             if( !pPager->exclusiveMode ) pagerUnlockDb(pPager, SHARED_LOCK);
+           }
+           sqlite3EndBenignMalloc();
+-        }else{
++        }else{
+           /* The journal file exists and no other connection has a reserved
+           ** or greater lock on the database file. Now check that there is
+           ** at least one non-zero bytes at the start of the journal file.
+           ** If there is, then we consider this journal to be hot. If not,
+           ** it can be ignored.
+           */
+-          if( !jrnlOpen ){
+-            int f = SQLITE_OPEN_READONLY|SQLITE_OPEN_MAIN_JOURNAL;
+-            rc = sqlite3OsOpen(pVfs, pPager->zJournal, pPager->jfd, f, &f);
+-          }
++          if( !jrnlOpen ){
++            int f = SQLITE_OPEN_READONLY|SQLITE_OPEN_MAIN_JOURNAL;
++            rc = sqlite3OsOpen(pVfs, pPager->zJournal, pPager->jfd, f, &f);
++          }
+           if( rc==SQLITE_OK ){
+             u8 first = 0;
+             rc = sqlite3OsRead(pPager->jfd, (void *)&first, 1, 0);
+@@ -5220,10 +5233,13 @@ static int hasHotJournal(Pager *pPager, int *pExists){
+         }
+       }
+     }
+-  }
+-
+-  return rc;
+-}
++  }
++
++  fprintf(stderr,
++    "[SQLITE_TRACE] pager.c:hasHotJournal complete rc=%d hotJournal=%d state=%d lock=%d\n",
++    rc, *pExists, pPager->eState, pPager->eLock);
++  return rc;
++}
+ 
+ /*
+ ** This function is called to obtain a shared lock on the database file.
+@@ -5350,16 +5366,22 @@ int sqlite3PagerSharedLock(Pager *pPager){
+       ** probably did not sync it and we are required to always sync
+       ** the journal before playing it back.
+       */
+-      if( isOpen(pPager->jfd) ){
+-        assert( rc==SQLITE_OK );
+-        rc = pagerSyncHotJournal(pPager);
+-        if( rc==SQLITE_OK ){
+-          rc = pager_playback(pPager, !pPager->tempFile);
+-          pPager->eState = PAGER_OPEN;
+-        }
+-      }else if( !pPager->exclusiveMode ){
+-        pagerUnlockDb(pPager, SHARED_LOCK);
+-      }
++      if( isOpen(pPager->jfd) ){
++        assert( rc==SQLITE_OK );
++        fprintf(stderr,
++          "[SQLITE_TRACE] pager.c:sqlite3PagerSharedLock hot-journal-recovery begin state=%d lock=%d journalMode=%d\n",
++          pPager->eState, pPager->eLock, pPager->journalMode);
++        rc = pagerSyncHotJournal(pPager);
++        if( rc==SQLITE_OK ){
++          rc = pager_playback(pPager, !pPager->tempFile);
++          pPager->eState = PAGER_OPEN;
++        }
++        fprintf(stderr,
++          "[SQLITE_TRACE] pager.c:sqlite3PagerSharedLock hot-journal-recovery complete rc=%d state=%d lock=%d\n",
++          rc, pPager->eState, pPager->eLock);
++      }else if( !pPager->exclusiveMode ){
++        pagerUnlockDb(pPager, SHARED_LOCK);
++      }
+ 
+       if( rc!=SQLITE_OK ){
+         /* This branch is taken if an error occurs while trying to open
+@@ -5920,11 +5942,15 @@ static int pager_open_journal(Pager *pPager){
+ ** sub-journal is implemented in-memory if pPager is an in-memory database,
+ ** or using a temporary file otherwise.
+ */
+-int sqlite3PagerBegin(Pager *pPager, int exFlag, int subjInMemory){
+-  int rc = SQLITE_OK;
+-  printf("[TRACE] sqlite3PagerBegin: Acquiring database lock (Phase: %d)\n", exFlag);
+-
+-  if( pPager->errCode ) return pPager->errCode;
++int sqlite3PagerBegin(Pager *pPager, int exFlag, int subjInMemory){
++  int rc = SQLITE_OK;
++
++  fprintf(stderr,
++    "[SQLITE_TRACE] pager.c:sqlite3PagerBegin begin state=%d lock=%d exFlag=%d subjInMemory=%d journalMode=%d wal=%d\n",
++    pPager->eState, pPager->eLock, exFlag, subjInMemory,
++    pPager->journalMode, pagerUseWal(pPager));
++
++  if( pPager->errCode ) return pPager->errCode;
+   assert( pPager->eState>=PAGER_READER && pPager->eState<PAGER_ERROR );
+   pPager->subjInMemory = (u8)subjInMemory;
+ 
+@@ -5947,19 +5973,25 @@ int sqlite3PagerBegin(Pager *pPager, int exFlag, int subjInMemory){
+       ** PAGER_RESERVED state. Otherwise, return an error code to the caller.
+       ** The busy-handler is not invoked if another connection already
+       ** holds the write-lock. If possible, the upper layer will call it.
+-      */
+-      rc = sqlite3WalBeginWriteTransaction(pPager->pWal);
+-    }else{
++      */
++      rc = sqlite3WalBeginWriteTransaction(pPager->pWal);
++      fprintf(stderr,
++        "[SQLITE_TRACE] pager.c:sqlite3PagerBegin wal-write-lock rc=%d state=%d lock=%d\n",
++        rc, pPager->eState, pPager->eLock);
++    }else{
+       /* Obtain a RESERVED lock on the database file. If the exFlag parameter
+       ** is true, then immediately upgrade this to an EXCLUSIVE lock. The
+       ** busy-handler callback can be used when upgrading to the EXCLUSIVE
+       ** lock, but not when obtaining the RESERVED lock.
+       */
+-      rc = pagerLockDb(pPager, RESERVED_LOCK);
+-      if( rc==SQLITE_OK && exFlag ){
+-        rc = pager_wait_on_lock(pPager, EXCLUSIVE_LOCK);
+-      }
+-    }
++      rc = pagerLockDb(pPager, RESERVED_LOCK);
++      if( rc==SQLITE_OK && exFlag ){
++        rc = pager_wait_on_lock(pPager, EXCLUSIVE_LOCK);
++      }
++      fprintf(stderr,
++        "[SQLITE_TRACE] pager.c:sqlite3PagerBegin rollback-lock rc=%d state=%d lock=%d\n",
++        rc, pPager->eState, pPager->eLock);
++    }
+ 
+     if( rc==SQLITE_OK ){
+       /* Change to WRITER_LOCKED state.
+@@ -5981,11 +6013,14 @@ int sqlite3PagerBegin(Pager *pPager, int exFlag, int subjInMemory){
+     assert( rc==SQLITE_OK || pPager->eState==PAGER_READER );
+     assert( rc!=SQLITE_OK || pPager->eState==PAGER_WRITER_LOCKED );
+     assert( assert_pager_state(pPager) );
+-  }
+-
+-  PAGERTRACE(("TRANSACTION %d\n", PAGERID(pPager)));
+-  return rc;
+-}
++  }
++
++  PAGERTRACE(("TRANSACTION %d\n", PAGERID(pPager)));
++  fprintf(stderr,
++    "[SQLITE_TRACE] pager.c:sqlite3PagerBegin complete rc=%d state=%d lock=%d journalMode=%d wal=%d\n",
++    rc, pPager->eState, pPager->eLock, pPager->journalMode, pagerUseWal(pPager));
++  return rc;
++}
+ 
+ /*
+ ** Write page pPg onto the end of the rollback journal.
+@@ -6468,9 +6503,13 @@ int sqlite3PagerCommitPhaseOne(
+   Pager *pPager,                  /* Pager object */
+   const char *zSuper,            /* If not NULL, the super-journal name */
+   int noSync                      /* True to omit the xSync on the db file */
+-){
+-  int rc = SQLITE_OK;             /* Return code */
+-  printf("[TRACE] sqlite3PagerCommitPhaseOne: Starting Phase 1 of Commit\n");
++){
++  int rc = SQLITE_OK;             /* Return code */
++
++  fprintf(stderr,
++    "[SQLITE_TRACE] pager.c:sqlite3PagerCommitPhaseOne begin state=%d lock=%d journalMode=%d wal=%d noSync=%d dbSize=%u dbOrigSize=%u\n",
++    pPager->eState, pPager->eLock, pPager->journalMode, pagerUseWal(pPager),
++    noSync, pPager->dbSize, pPager->dbOrigSize);
+ 
+ 
+   assert( pPager->eState==PAGER_WRITER_LOCKED
+@@ -6680,12 +6719,15 @@ int sqlite3PagerCommitPhaseOne(
+     }
+   }
+ 
+-commit_phase_one_exit:
+-  if( rc==SQLITE_OK && !pagerUseWal(pPager) ){
+-    pPager->eState = PAGER_WRITER_FINISHED;
+-  }
+-  return rc;
+-}
++commit_phase_one_exit:
++  if( rc==SQLITE_OK && !pagerUseWal(pPager) ){
++    pPager->eState = PAGER_WRITER_FINISHED;
++  }
++  fprintf(stderr,
++    "[SQLITE_TRACE] pager.c:sqlite3PagerCommitPhaseOne complete rc=%d state=%d lock=%d journalMode=%d wal=%d\n",
++    rc, pPager->eState, pPager->eLock, pPager->journalMode, pagerUseWal(pPager));
++  return rc;
++}
+ 
+ 
+ /*
+@@ -6703,9 +6745,12 @@ commit_phase_one_exit:
+ ** If an error occurs, an IO error code is returned and the pager
+ ** moves into the error state. Otherwise, SQLITE_OK is returned.
+ */
+-int sqlite3PagerCommitPhaseTwo(Pager *pPager){
+-  int rc = SQLITE_OK;                  /* Return code */
+-  printf("[TRACE] sqlite3PagerCommitPhaseTwo: Starting Phase 2 of Commit\n");
++int sqlite3PagerCommitPhaseTwo(Pager *pPager){
++  int rc = SQLITE_OK;                  /* Return code */
++
++  fprintf(stderr,
++    "[SQLITE_TRACE] pager.c:sqlite3PagerCommitPhaseTwo begin state=%d lock=%d journalMode=%d wal=%d\n",
++    pPager->eState, pPager->eLock, pPager->journalMode, pagerUseWal(pPager));
+ 
+   /* This routine should not be called if a prior error has occurred.
+   ** But if (due to a coding error elsewhere in the system) it does get
+@@ -6739,10 +6784,13 @@ int sqlite3PagerCommitPhaseTwo(Pager *pPager){
+     return SQLITE_OK;
+   }
+ 
+-  PAGERTRACE(("COMMIT %d\n", PAGERID(pPager)));
+-  rc = pager_end_transaction(pPager, pPager->setSuper, 1);
+-  return pager_error(pPager, rc);
+-}
++  PAGERTRACE(("COMMIT %d\n", PAGERID(pPager)));
++  rc = pager_end_transaction(pPager, pPager->setSuper, 1);
++  fprintf(stderr,
++    "[SQLITE_TRACE] pager.c:sqlite3PagerCommitPhaseTwo complete rc=%d state=%d lock=%d journalMode=%d wal=%d\n",
++    rc, pPager->eState, pPager->eLock, pPager->journalMode, pagerUseWal(pPager));
++  return pager_error(pPager, rc);
++}
+ 
+ /*
+ ** If a write transaction is open, then all changes made within the
+diff --git a/sqlite-master/src/wal.c b/sqlite-master/src/wal.c
+index 5f08bf3..b192bf6 100644
+--- a/sqlite-master/src/wal.c
++++ b/sqlite-master/src/wal.c
+@@ -3690,9 +3690,13 @@ Pgno sqlite3WalDbsize(Wal *pWal){
+ **
+ ** There can only be a single writer active at a time.
+ */
+-int sqlite3WalBeginWriteTransaction(Wal *pWal){
+-  int rc;
+-  printf("[TRACE] sqlite3WalBeginWriteTransaction: Starting WAL write transaction\n");
++int sqlite3WalBeginWriteTransaction(Wal *pWal){
++  int rc;
++
++  fprintf(stderr,
++    "[SQLITE_TRACE] wal.c:sqlite3WalBeginWriteTransaction begin readLock=%d writeLock=%d mxFrame=%u nPage=%u readOnly=%d\n",
++    pWal->readLock, pWal->writeLock, pWal->hdr.mxFrame, pWal->hdr.nPage,
++    pWal->readOnly);
+ 
+ #ifdef SQLITE_ENABLE_SETLK_TIMEOUT
+   /* If the write-lock is already held, then it was obtained before the
+@@ -3716,11 +3720,14 @@ int sqlite3WalBeginWriteTransaction(Wal *pWal){
+   /* Only one writer allowed at a time.  Get the write lock.  Return
+   ** SQLITE_BUSY if unable.
+   */
+-  rc = walLockExclusive(pWal, WAL_WRITE_LOCK, 1);
+-  if( rc ){
+-    return rc;
+-  }
+-  pWal->writeLock = 1;
++  rc = walLockExclusive(pWal, WAL_WRITE_LOCK, 1);
++  if( rc ){
++    fprintf(stderr,
++      "[SQLITE_TRACE] wal.c:sqlite3WalBeginWriteTransaction lock-failed rc=%d readLock=%d writeLock=%d\n",
++      rc, pWal->readLock, pWal->writeLock);
++    return rc;
++  }
++  pWal->writeLock = 1;
+ 
+   /* If another connection has written to the database file since the
+   ** time the read transaction on this connection was started, then
+@@ -3733,12 +3740,15 @@ int sqlite3WalBeginWriteTransaction(Wal *pWal){
+   }
+   SEH_EXCEPT( rc = SQLITE_IOERR_IN_PAGE; )
+ 
+-  if( rc!=SQLITE_OK ){
+-    walUnlockExclusive(pWal, WAL_WRITE_LOCK, 1);
+-    pWal->writeLock = 0;
+-  }
+-  return rc;
+-}
++  if( rc!=SQLITE_OK ){
++    walUnlockExclusive(pWal, WAL_WRITE_LOCK, 1);
++    pWal->writeLock = 0;
++  }
++  fprintf(stderr,
++    "[SQLITE_TRACE] wal.c:sqlite3WalBeginWriteTransaction complete rc=%d readLock=%d writeLock=%d mxFrame=%u nPage=%u\n",
++    rc, pWal->readLock, pWal->writeLock, pWal->hdr.mxFrame, pWal->hdr.nPage);
++  return rc;
++}
+ 
+ /*
+ ** End a write transaction.  The commit has already been done.  This
+@@ -4037,8 +4047,8 @@ static int walFrames(
+   Pgno nTruncate,                 /* Database size after this commit */
+   int isCommit,                   /* True if this is a commit */
+   int sync_flags                  /* Flags to pass to OsSync() (or 0) */
+-){
+-  int rc;                         /* Used to catch return codes */
++){
++  int rc;                         /* Used to catch return codes */
+   u32 iFrame;                     /* Next frame address */
+   PgHdr *p;                       /* Iterator to run through pList with. */
+   PgHdr *pLast = 0;               /* Last frame in list */
+@@ -4047,10 +4057,16 @@ static int walFrames(
+   i64 iOffset;                    /* Next byte to write in WAL file */
+   WalWriter w;                    /* The writer */
+   u32 iFirst = 0;                 /* First frame that may be overwritten */
+-  WalIndexHdr *pLive;             /* Pointer to shared header */
+-
+-  assert( pList );
+-  assert( pWal->writeLock );
++  WalIndexHdr *pLive;             /* Pointer to shared header */
++  int nTraceFrame = 0;
++
++  assert( pList );
++  assert( pWal->writeLock );
++
++  for(p=pList; p; p=p->pDirty) nTraceFrame++;
++  fprintf(stderr,
++    "[SQLITE_TRACE] wal.c:walFrames begin frames=%d isCommit=%d nTruncate=%u mxFrame=%u syncFlags=0x%x\n",
++    nTraceFrame, isCommit, nTruncate, pWal->hdr.mxFrame, sync_flags);
+ 
+   /* If this frame set completes a transaction, then nTruncate>0.  If
+   ** nTruncate==0 then this frame set does not complete the transaction. */
+@@ -4250,15 +4266,21 @@ static int walFrames(
+       pWal->hdr.nPage = nTruncate;
+     }
+     /* If this is a commit, update the wal-index header too. */
+-    if( isCommit ){
+-      walIndexWriteHdr(pWal);
+-      pWal->iCallback = iFrame;
+-    }
+-  }
+-
+-  WALTRACE(("WAL%p: frame write %s\n", pWal, rc ? "failed" : "ok"));
+-  return rc;
+-}
++    if( isCommit ){
++      walIndexWriteHdr(pWal);
++      pWal->iCallback = iFrame;
++      fprintf(stderr,
++        "[SQLITE_TRACE] wal.c:walFrames commit-index mxFrame=%u nPage=%u callback=%u\n",
++        pWal->hdr.mxFrame, pWal->hdr.nPage, pWal->iCallback);
++    }
++  }
++
++  WALTRACE(("WAL%p: frame write %s\n", pWal, rc ? "failed" : "ok"));
++  fprintf(stderr,
++    "[SQLITE_TRACE] wal.c:walFrames complete rc=%d frames=%d isCommit=%d mxFrame=%u nPage=%u\n",
++    rc, nTraceFrame, isCommit, pWal->hdr.mxFrame, pWal->hdr.nPage);
++  return rc;
++}
+ 
+ /* 
+ ** Write a set of frames to the log. The caller must hold the write-lock
+@@ -4274,14 +4296,20 @@ int sqlite3WalFrames(
+   Pgno nTruncate,                 /* Database size after this commit */
+   int isCommit,                   /* True if this is a commit */
+   int sync_flags                  /* Flags to pass to OsSync() (or 0) */
+-){
+-  int rc;
+-  SEH_TRY {
+-    rc = walFrames(pWal, szPage, pList, nTruncate, isCommit, sync_flags);
+-  }
+-  SEH_EXCEPT( rc = walHandleException(pWal); )
+-  return rc;
+-}
++){
++  int rc;
++  fprintf(stderr,
++    "[SQLITE_TRACE] wal.c:sqlite3WalFrames begin isCommit=%d nTruncate=%u syncFlags=0x%x\n",
++    isCommit, nTruncate, sync_flags);
++  SEH_TRY {
++    rc = walFrames(pWal, szPage, pList, nTruncate, isCommit, sync_flags);
++  }
++  SEH_EXCEPT( rc = walHandleException(pWal); )
++  fprintf(stderr,
++    "[SQLITE_TRACE] wal.c:sqlite3WalFrames complete rc=%d isCommit=%d nTruncate=%u\n",
++    rc, isCommit, nTruncate);
++  return rc;
++}
+ 
+ /*
+ ** This routine is called to implement sqlite3_wal_checkpoint() and

@@ -3692,7 +3692,11 @@ Pgno sqlite3WalDbsize(Wal *pWal){
 */
 int sqlite3WalBeginWriteTransaction(Wal *pWal){
   int rc;
-  printf("[TRACE] sqlite3WalBeginWriteTransaction: Starting WAL write transaction\n");
+
+  fprintf(stderr,
+    "[SQLITE_TRACE] wal.c:sqlite3WalBeginWriteTransaction begin readLock=%d writeLock=%d mxFrame=%u nPage=%u readOnly=%d\n",
+    pWal->readLock, pWal->writeLock, pWal->hdr.mxFrame, pWal->hdr.nPage,
+    pWal->readOnly);
 
 #ifdef SQLITE_ENABLE_SETLK_TIMEOUT
   /* If the write-lock is already held, then it was obtained before the
@@ -3718,6 +3722,9 @@ int sqlite3WalBeginWriteTransaction(Wal *pWal){
   */
   rc = walLockExclusive(pWal, WAL_WRITE_LOCK, 1);
   if( rc ){
+    fprintf(stderr,
+      "[SQLITE_TRACE] wal.c:sqlite3WalBeginWriteTransaction lock-failed rc=%d readLock=%d writeLock=%d\n",
+      rc, pWal->readLock, pWal->writeLock);
     return rc;
   }
   pWal->writeLock = 1;
@@ -3737,6 +3744,9 @@ int sqlite3WalBeginWriteTransaction(Wal *pWal){
     walUnlockExclusive(pWal, WAL_WRITE_LOCK, 1);
     pWal->writeLock = 0;
   }
+  fprintf(stderr,
+    "[SQLITE_TRACE] wal.c:sqlite3WalBeginWriteTransaction complete rc=%d readLock=%d writeLock=%d mxFrame=%u nPage=%u\n",
+    rc, pWal->readLock, pWal->writeLock, pWal->hdr.mxFrame, pWal->hdr.nPage);
   return rc;
 }
 
@@ -4048,9 +4058,15 @@ static int walFrames(
   WalWriter w;                    /* The writer */
   u32 iFirst = 0;                 /* First frame that may be overwritten */
   WalIndexHdr *pLive;             /* Pointer to shared header */
+  int nTraceFrame = 0;
 
   assert( pList );
   assert( pWal->writeLock );
+
+  for(p=pList; p; p=p->pDirty) nTraceFrame++;
+  fprintf(stderr,
+    "[SQLITE_TRACE] wal.c:walFrames begin frames=%d isCommit=%d nTruncate=%u mxFrame=%u syncFlags=0x%x\n",
+    nTraceFrame, isCommit, nTruncate, pWal->hdr.mxFrame, sync_flags);
 
   /* If this frame set completes a transaction, then nTruncate>0.  If
   ** nTruncate==0 then this frame set does not complete the transaction. */
@@ -4253,10 +4269,16 @@ static int walFrames(
     if( isCommit ){
       walIndexWriteHdr(pWal);
       pWal->iCallback = iFrame;
+      fprintf(stderr,
+        "[SQLITE_TRACE] wal.c:walFrames commit-index mxFrame=%u nPage=%u callback=%u\n",
+        pWal->hdr.mxFrame, pWal->hdr.nPage, pWal->iCallback);
     }
   }
 
   WALTRACE(("WAL%p: frame write %s\n", pWal, rc ? "failed" : "ok"));
+  fprintf(stderr,
+    "[SQLITE_TRACE] wal.c:walFrames complete rc=%d frames=%d isCommit=%d mxFrame=%u nPage=%u\n",
+    rc, nTraceFrame, isCommit, pWal->hdr.mxFrame, pWal->hdr.nPage);
   return rc;
 }
 
@@ -4276,10 +4298,16 @@ int sqlite3WalFrames(
   int sync_flags                  /* Flags to pass to OsSync() (or 0) */
 ){
   int rc;
+  fprintf(stderr,
+    "[SQLITE_TRACE] wal.c:sqlite3WalFrames begin isCommit=%d nTruncate=%u syncFlags=0x%x\n",
+    isCommit, nTruncate, sync_flags);
   SEH_TRY {
     rc = walFrames(pWal, szPage, pList, nTruncate, isCommit, sync_flags);
   }
   SEH_EXCEPT( rc = walHandleException(pWal); )
+  fprintf(stderr,
+    "[SQLITE_TRACE] wal.c:sqlite3WalFrames complete rc=%d isCommit=%d nTruncate=%u\n",
+    rc, isCommit, nTruncate);
   return rc;
 }
 

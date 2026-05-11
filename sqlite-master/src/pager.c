@@ -1160,7 +1160,11 @@ static int pagerUnlockDb(Pager *pPager, int eLock){
 */
 static int pagerLockDb(Pager *pPager, int eLock){
   int rc = SQLITE_OK;
-  printf("[TRACE] pagerLockDb: Escalating lock to %d\n", eLock);
+  int oldLock = pPager->eLock;
+
+  fprintf(stderr,
+    "[SQLITE_TRACE] pager.c:pagerLockDb request state=%d oldLock=%d newLock=%d journalMode=%d wal=%d\n",
+    pPager->eState, oldLock, eLock, pPager->journalMode, pagerUseWal(pPager));
 
   assert( eLock==SHARED_LOCK || eLock==RESERVED_LOCK || eLock==EXCLUSIVE_LOCK );
   if( pPager->eLock<eLock || pPager->eLock==UNKNOWN_LOCK ){
@@ -1170,6 +1174,9 @@ static int pagerLockDb(Pager *pPager, int eLock){
       IOTRACE(("LOCK %p %d\n", pPager, eLock))
     }
   }
+  fprintf(stderr,
+    "[SQLITE_TRACE] pager.c:pagerLockDb complete rc=%d state=%d oldLock=%d currentLock=%d requestedLock=%d\n",
+    rc, pPager->eState, oldLock, pPager->eLock, eLock);
   return rc;
 }
 
@@ -4697,7 +4704,6 @@ int sqlite3PagerFlush(Pager *pPager){
       pList = pNext;
     }
   }
-
   return rc;
 }
 
@@ -5138,6 +5144,10 @@ static int hasHotJournal(Pager *pPager, int *pExists){
   int exists = 1;               /* True if a journal file is present */
   int jrnlOpen = !!isOpen(pPager->jfd);
 
+  fprintf(stderr,
+    "[SQLITE_TRACE] pager.c:hasHotJournal begin state=%d lock=%d journalMode=%d journalOpen=%d\n",
+    pPager->eState, pPager->eLock, pPager->journalMode, jrnlOpen);
+
   assert( pPager->useJournal );
   assert( isOpen(pPager->fd) );
   assert( pPager->eState==PAGER_OPEN );
@@ -5150,6 +5160,9 @@ static int hasHotJournal(Pager *pPager, int *pExists){
   if( !jrnlOpen ){
     rc = sqlite3OsAccess(pVfs, pPager->zJournal, SQLITE_ACCESS_EXISTS, &exists);
   }
+  fprintf(stderr,
+    "[SQLITE_TRACE] pager.c:hasHotJournal access rc=%d exists=%d journalOpen=%d\n",
+    rc, exists, jrnlOpen);
   if( rc==SQLITE_OK && exists ){
     int locked = 0;             /* True if some process holds a RESERVED lock */
 
@@ -5222,6 +5235,9 @@ static int hasHotJournal(Pager *pPager, int *pExists){
     }
   }
 
+  fprintf(stderr,
+    "[SQLITE_TRACE] pager.c:hasHotJournal complete rc=%d hotJournal=%d state=%d lock=%d\n",
+    rc, *pExists, pPager->eState, pPager->eLock);
   return rc;
 }
 
@@ -5352,11 +5368,17 @@ int sqlite3PagerSharedLock(Pager *pPager){
       */
       if( isOpen(pPager->jfd) ){
         assert( rc==SQLITE_OK );
+        fprintf(stderr,
+          "[SQLITE_TRACE] pager.c:sqlite3PagerSharedLock hot-journal-recovery begin state=%d lock=%d journalMode=%d\n",
+          pPager->eState, pPager->eLock, pPager->journalMode);
         rc = pagerSyncHotJournal(pPager);
         if( rc==SQLITE_OK ){
           rc = pager_playback(pPager, !pPager->tempFile);
           pPager->eState = PAGER_OPEN;
         }
+        fprintf(stderr,
+          "[SQLITE_TRACE] pager.c:sqlite3PagerSharedLock hot-journal-recovery complete rc=%d state=%d lock=%d\n",
+          rc, pPager->eState, pPager->eLock);
       }else if( !pPager->exclusiveMode ){
         pagerUnlockDb(pPager, SHARED_LOCK);
       }
@@ -5922,7 +5944,11 @@ static int pager_open_journal(Pager *pPager){
 */
 int sqlite3PagerBegin(Pager *pPager, int exFlag, int subjInMemory){
   int rc = SQLITE_OK;
-  printf("[TRACE] sqlite3PagerBegin: Acquiring database lock (Phase: %d)\n", exFlag);
+
+  fprintf(stderr,
+    "[SQLITE_TRACE] pager.c:sqlite3PagerBegin begin state=%d lock=%d exFlag=%d subjInMemory=%d journalMode=%d wal=%d\n",
+    pPager->eState, pPager->eLock, exFlag, subjInMemory,
+    pPager->journalMode, pagerUseWal(pPager));
 
   if( pPager->errCode ) return pPager->errCode;
   assert( pPager->eState>=PAGER_READER && pPager->eState<PAGER_ERROR );
@@ -5949,6 +5975,9 @@ int sqlite3PagerBegin(Pager *pPager, int exFlag, int subjInMemory){
       ** holds the write-lock. If possible, the upper layer will call it.
       */
       rc = sqlite3WalBeginWriteTransaction(pPager->pWal);
+      fprintf(stderr,
+        "[SQLITE_TRACE] pager.c:sqlite3PagerBegin wal-write-lock rc=%d state=%d lock=%d\n",
+        rc, pPager->eState, pPager->eLock);
     }else{
       /* Obtain a RESERVED lock on the database file. If the exFlag parameter
       ** is true, then immediately upgrade this to an EXCLUSIVE lock. The
@@ -5959,6 +5988,9 @@ int sqlite3PagerBegin(Pager *pPager, int exFlag, int subjInMemory){
       if( rc==SQLITE_OK && exFlag ){
         rc = pager_wait_on_lock(pPager, EXCLUSIVE_LOCK);
       }
+      fprintf(stderr,
+        "[SQLITE_TRACE] pager.c:sqlite3PagerBegin rollback-lock rc=%d state=%d lock=%d\n",
+        rc, pPager->eState, pPager->eLock);
     }
 
     if( rc==SQLITE_OK ){
@@ -5984,6 +6016,9 @@ int sqlite3PagerBegin(Pager *pPager, int exFlag, int subjInMemory){
   }
 
   PAGERTRACE(("TRANSACTION %d\n", PAGERID(pPager)));
+  fprintf(stderr,
+    "[SQLITE_TRACE] pager.c:sqlite3PagerBegin complete rc=%d state=%d lock=%d journalMode=%d wal=%d\n",
+    rc, pPager->eState, pPager->eLock, pPager->journalMode, pagerUseWal(pPager));
   return rc;
 }
 
@@ -6470,7 +6505,11 @@ int sqlite3PagerCommitPhaseOne(
   int noSync                      /* True to omit the xSync on the db file */
 ){
   int rc = SQLITE_OK;             /* Return code */
-  printf("[TRACE] sqlite3PagerCommitPhaseOne: Starting Phase 1 of Commit\n");
+
+  fprintf(stderr,
+    "[SQLITE_TRACE] pager.c:sqlite3PagerCommitPhaseOne begin state=%d lock=%d journalMode=%d wal=%d noSync=%d dbSize=%u dbOrigSize=%u\n",
+    pPager->eState, pPager->eLock, pPager->journalMode, pagerUseWal(pPager),
+    noSync, pPager->dbSize, pPager->dbOrigSize);
 
 
   assert( pPager->eState==PAGER_WRITER_LOCKED
@@ -6684,6 +6723,9 @@ commit_phase_one_exit:
   if( rc==SQLITE_OK && !pagerUseWal(pPager) ){
     pPager->eState = PAGER_WRITER_FINISHED;
   }
+  fprintf(stderr,
+    "[SQLITE_TRACE] pager.c:sqlite3PagerCommitPhaseOne complete rc=%d state=%d lock=%d journalMode=%d wal=%d\n",
+    rc, pPager->eState, pPager->eLock, pPager->journalMode, pagerUseWal(pPager));
   return rc;
 }
 
@@ -6705,7 +6747,10 @@ commit_phase_one_exit:
 */
 int sqlite3PagerCommitPhaseTwo(Pager *pPager){
   int rc = SQLITE_OK;                  /* Return code */
-  printf("[TRACE] sqlite3PagerCommitPhaseTwo: Starting Phase 2 of Commit\n");
+
+  fprintf(stderr,
+    "[SQLITE_TRACE] pager.c:sqlite3PagerCommitPhaseTwo begin state=%d lock=%d journalMode=%d wal=%d\n",
+    pPager->eState, pPager->eLock, pPager->journalMode, pagerUseWal(pPager));
 
   /* This routine should not be called if a prior error has occurred.
   ** But if (due to a coding error elsewhere in the system) it does get
@@ -6741,6 +6786,9 @@ int sqlite3PagerCommitPhaseTwo(Pager *pPager){
 
   PAGERTRACE(("COMMIT %d\n", PAGERID(pPager)));
   rc = pager_end_transaction(pPager, pPager->setSuper, 1);
+  fprintf(stderr,
+    "[SQLITE_TRACE] pager.c:sqlite3PagerCommitPhaseTwo complete rc=%d state=%d lock=%d journalMode=%d wal=%d\n",
+    rc, pPager->eState, pPager->eLock, pPager->journalMode, pagerUseWal(pPager));
   return pager_error(pPager, rc);
 }
 

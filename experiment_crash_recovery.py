@@ -1,134 +1,126 @@
 """
-Experiment 3: Crash Recovery via Rollback Journal
+Crash-recovery experiment using the modified SQLite shell where practical.
 
-Simulates a process crash mid-transaction and verifies SQLite's crash recovery.
-Maps to: src/pager.c -> pager_playback() — "hot journal" detection and rollback.
-Windows-compatible version (uses taskkill instead of SIGKILL).
+The script starts a transaction with build/sqlite3_custom, kills the process
+before COMMIT, then reopens the database with the same binary to trigger
+rollback-journal recovery if a hot journal was left behind.
 """
 
-import sqlite3
-import os
+from pathlib import Path
+import subprocess
 import sys
 import time
-import subprocess
-
-# Use a local path in the same folder as this script (works on Windows & Unix)
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "crash_test.db")
-ROWS_BEFORE_CRASH = 1000
 
 
-def writer_process():
-    """Runs in a subprocess — will be killed mid-transaction."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA journal_mode=DELETE")
-    conn.execute("PRAGMA synchronous=FULL")
-
-    conn.execute("DROP TABLE IF EXISTS crash_test")
-    conn.execute("CREATE TABLE crash_test (id INTEGER PRIMARY KEY, data TEXT)")
-    conn.commit()
-
-    print(f"[WRITER] Starting transaction, inserting {ROWS_BEFORE_CRASH} rows...", flush=True)
-    conn.execute("BEGIN")
-    for i in range(ROWS_BEFORE_CRASH):
-        conn.execute("INSERT INTO crash_test VALUES (?, ?)", (i, f"row_{i}" * 10))
-
-    print("[WRITER] Mid-transaction — about to be killed!", flush=True)
-    time.sleep(10)
-
-    conn.execute("COMMIT")   # Never reached
-    print("[WRITER] COMMIT — this should NOT print!")
-    conn.close()
+ROOT = Path(__file__).resolve().parent
+SQLITE_CUSTOM = ROOT / "build" / "sqlite3_custom"
+RESULTS_DIR = ROOT / "results"
+OUTPUT_PATH = RESULTS_DIR / "crash_recovery_output.txt"
+DB_PATH = RESULTS_DIR / "crash_recovery.db"
+ROWS_BEFORE_KILL = 1000
 
 
-def verify_recovery():
-    """Open the database after crash and verify rollback occurred."""
-    print("\n[VERIFIER] Opening database after crash...")
-
-    journal_path = DB_PATH + "-journal"
-    if os.path.exists(journal_path):
-        print(f"[VERIFIER] Hot journal detected: {journal_path}")
-        print("[VERIFIER] SQLite will replay it automatically on open.")
-    else:
-        print("[VERIFIER] Journal already cleaned up by SQLite on open.")
-        
-    print("\n[VERIFIER] -> Code mapping: src/pager.c -> hasHotJournal() detects the journal file.")
-    print("[VERIFIER] -> Code mapping: src/pager.c -> pager_playback() rolls back uncommitted changes.")
-
-    conn = sqlite3.connect(DB_PATH, timeout=5)
-    try:
-        count = conn.execute("SELECT COUNT(*) FROM crash_test").fetchone()[0]
-        print(f"[VERIFIER] Row count after crash + recovery: {count}")
-        if count == 0:
-            print("[VERIFIER] PASS: All rows rolled back. ACID Atomicity preserved!")
-        else:
-            print(f"[VERIFIER] UNEXPECTED: {count} rows present without COMMIT.")
-    except sqlite3.OperationalError as e:
-        print(f"[VERIFIER] Table missing ({e})")
-        print("[VERIFIER] PASS: Entire transaction was rolled back.")
-    conn.close()
-
-
-def kill_process(pid):
-    """Kill a process — works on both Windows and Unix."""
+def require_custom_sqlite() -> Path:
+    candidates = [SQLITE_CUSTOM]
     if sys.platform == "win32":
-        subprocess.call(
-            ["taskkill", "/F", "/PID", str(pid)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
+        candidates.append(SQLITE_CUSTOM.with_suffix(".exe"))
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    print("Custom SQLite binary not found. Run scripts/build_sqlite.sh first.", file=sys.stderr)
+    sys.exit(1)
+
+
+def run_sql(sqlite_bin: Path, sql: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [str(sqlite_bin), "-batch", "-noheader", str(DB_PATH)],
+        input=sql,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+
+
+def cleanup() -> None:
+    for suffix in ["", "-journal", "-wal", "-shm"]:
+        path = Path(str(DB_PATH) + suffix)
+        if path.exists():
+            path.unlink()
+
+
+def main() -> int:
+    sqlite_bin = require_custom_sqlite()
+    RESULTS_DIR.mkdir(exist_ok=True)
+    cleanup()
+
+    lines = [
+        "SQLite crash recovery experiment",
+        f"SQLite binary: {sqlite_bin}",
+        f"Database: {DB_PATH}",
+    ]
+
+    setup = run_sql(
+        sqlite_bin,
+        """
+PRAGMA journal_mode=DELETE;
+PRAGMA synchronous=FULL;
+DROP TABLE IF EXISTS crash_test;
+CREATE TABLE crash_test(id INTEGER PRIMARY KEY, data TEXT);
+""",
+    )
+    lines.append(f"Setup exit code: {setup.returncode}")
+    if setup.returncode != 0:
+        lines.append(setup.stdout)
+        OUTPUT_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        print("\n".join(lines))
+        return setup.returncode
+
+    proc = subprocess.Popen(
+        [str(sqlite_bin), "-batch", str(DB_PATH)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    assert proc.stdin is not None
+    proc.stdin.write("PRAGMA journal_mode=DELETE;\nPRAGMA synchronous=FULL;\nBEGIN;\n")
+    for rowid in range(ROWS_BEFORE_KILL):
+        proc.stdin.write(f"INSERT INTO crash_test VALUES({rowid}, 'row_{rowid}');\n")
+    proc.stdin.flush()
+
+    time.sleep(0.5)
+    lines.append(f"Killing writer before COMMIT after sending {ROWS_BEFORE_KILL} inserts.")
+    proc.kill()
+    writer_output, _ = proc.communicate(timeout=5)
+    lines.append(f"Writer exit code: {proc.returncode}")
+    lines.append(f"Writer trace lines: {writer_output.count('[SQLITE_TRACE]')}")
+
+    journal_path = Path(str(DB_PATH) + "-journal")
+    lines.append(f"Rollback journal present before reopen: {journal_path.exists()}")
+
+    verify = run_sql(sqlite_bin, "SELECT COUNT(*) FROM crash_test;\n")
+    lines.append(f"Verifier exit code: {verify.returncode}")
+    lines.append(f"Verifier trace lines: {verify.stdout.count('[SQLITE_TRACE]')}")
+    lines.append("Verifier output:")
+    lines.append(verify.stdout.strip())
+
+    count_lines = [line.strip() for line in verify.stdout.splitlines() if line.strip().isdigit()]
+    if verify.returncode != 0:
+        status = verify.returncode
+        lines.append("FAIL: verifier could not open/read the database.")
+    elif count_lines and int(count_lines[-1]) == 0:
+        status = 0
+        lines.append("PASS: uncommitted rows did not persist after reopening the database.")
     else:
-        import signal
-        os.kill(pid, signal.SIGKILL)
+        status = 2
+        lines.append("FAIL: uncommitted rows appear to have persisted, or row count was not parsed.")
+
+    OUTPUT_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print("\n".join(lines))
+    print(f"\nOutput file: {OUTPUT_PATH}")
+    cleanup()
+    return status
 
 
 if __name__ == "__main__":
-    if "--writer" in sys.argv:
-        writer_process()
-        sys.exit(0)
-
-    # Clean up any leftover files from a previous run
-    for path in [DB_PATH, DB_PATH + "-journal", DB_PATH + "-wal", DB_PATH + "-shm"]:
-        if os.path.exists(path):
-            os.unlink(path)
-
-    print("=" * 55)
-    print("  SQLite Crash Recovery Experiment")
-    print("=" * 55)
-    print(f"\n[MAIN] DB path : {DB_PATH}")
-    print("[MAIN] Launching writer subprocess...")
-
-    proc = subprocess.Popen(
-        [sys.executable, os.path.abspath(__file__), "--writer"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True
-    )
-
-    # Read writer output until it signals it's mid-transaction
-    for line in iter(proc.stdout.readline, ""):
-        print(line, end="")
-        if "about to be killed" in line:
-            break
-
-    # Give the OS a moment to flush the journal to disk
-    time.sleep(0.5)
-
-    print(f"\n[MAIN] Forcefully terminating writer (pid={proc.pid})...")
-    kill_process(proc.pid)
-    proc.wait()
-    print(f"[MAIN] Writer terminated. Exit code: {proc.returncode}")
-
-    verify_recovery()
-
-    print("\n--- Why this works ---")
-    print("SQLite's rollback journal is written BEFORE any page is modified.")
-    print("When the process is killed, the journal stays on disk.")
-    print("On next open, sqlite3PagerOpen() calls hasHotJournal(),")
-    print("detects the orphaned journal, and calls pager_playback()")
-    print("to restore every page to its pre-transaction state.")
-    print("Code: src/pager.c -> hasHotJournal() -> pager_playback()")
-
-    # Cleanup
-    for path in [DB_PATH, DB_PATH + "-journal", DB_PATH + "-wal", DB_PATH + "-shm"]:
-        if os.path.exists(path):
-            os.unlink(path)
+    raise SystemExit(main())

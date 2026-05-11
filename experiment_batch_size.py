@@ -1,81 +1,110 @@
 """
-Experiment 2: Transaction Batch Size vs. Write Throughput
+Batch-size helper experiment using the modified SQLite shell.
 
-Demonstrates the cost of fsync per commit — the core bottleneck in SQLite write performance.
-Maps to: src/pager.c -> sqlite3OsSync() called in sqlite3PagerCommitPhaseOne()
+This is still a performance helper experiment, but it executes build/sqlite3_custom
+so the same run can confirm pager/B-tree source instrumentation is active.
 """
 
-import sqlite3
+from pathlib import Path
+import subprocess
+import sys
 import time
-import os
-import tempfile
-
-TOTAL_ROWS = 50_000
-BATCH_SIZES = [1, 10, 100, 1000, 5000, TOTAL_ROWS]
 
 
-def run_experiment(batch_size):
-    # Create a temp DB file in the same folder as this script
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(script_dir, f"_bench_{batch_size}.db")
+ROOT = Path(__file__).resolve().parent
+SQLITE_CUSTOM = ROOT / "build" / "sqlite3_custom"
+RESULTS_DIR = ROOT / "results"
+OUTPUT_PATH = RESULTS_DIR / "batch_size_output.txt"
+TOTAL_ROWS = 2000
+BATCH_SIZES = [1, 10, 100, 500, TOTAL_ROWS]
 
-    # Remove if exists from a previous run
-    if os.path.exists(db_path):
-        os.unlink(db_path)
 
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA journal_mode=DELETE")
-    conn.execute("PRAGMA synchronous=NORMAL")   # NORMAL: sync at safe checkpoints (not every commit)
-    conn.execute("CREATE TABLE data (id INTEGER PRIMARY KEY, val REAL, txt TEXT)")
+def require_custom_sqlite() -> Path:
+    candidates = [SQLITE_CUSTOM]
+    if sys.platform == "win32":
+        candidates.append(SQLITE_CUSTOM.with_suffix(".exe"))
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    print("Custom SQLite binary not found. Run scripts/build_sqlite.sh first.", file=sys.stderr)
+    sys.exit(1)
+
+
+def build_sql(batch_size: int) -> str:
+    lines = [
+        "PRAGMA journal_mode=DELETE;",
+        "PRAGMA synchronous=NORMAL;",
+        "DROP TABLE IF EXISTS data;",
+        "CREATE TABLE data(id INTEGER PRIMARY KEY, val REAL, txt TEXT);",
+    ]
+    for start in range(0, TOTAL_ROWS, batch_size):
+        lines.append("BEGIN;")
+        end = min(start + batch_size, TOTAL_ROWS)
+        for rowid in range(start, end):
+            lines.append(f"INSERT INTO data VALUES({rowid}, {rowid * 1.5}, 'data_{rowid}');")
+        lines.append("COMMIT;")
+    lines.append("SELECT COUNT(*) FROM data;")
+    return "\n".join(lines) + "\n"
+
+
+def run_batch(sqlite_bin: Path, batch_size: int) -> tuple[float, int, int]:
+    db_path = RESULTS_DIR / f"batch_{batch_size}.db"
+    for suffix in ["", "-journal", "-wal", "-shm"]:
+        path = Path(str(db_path) + suffix)
+        if path.exists():
+            path.unlink()
 
     start = time.perf_counter()
-    i = 0
-    while i < TOTAL_ROWS:
-        conn.execute("BEGIN")
-        batch_end = min(i + batch_size, TOTAL_ROWS)
-        for j in range(i, batch_end):
-            conn.execute("INSERT INTO data VALUES (?, ?, ?)", (j, j * 1.5, f"data_{j}"))
-        conn.execute("COMMIT")
-        i = batch_end
+    result = subprocess.run(
+        [str(sqlite_bin), "-batch", str(db_path)],
+        input=build_sql(batch_size),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
     elapsed = time.perf_counter() - start
+    trace_count = result.stdout.count("[SQLITE_TRACE]")
+    if result.returncode != 0:
+        raise RuntimeError(result.stdout)
+    for suffix in ["", "-journal", "-wal", "-shm"]:
+        path = Path(str(db_path) + suffix)
+        if path.exists():
+            path.unlink()
+    commits = (TOTAL_ROWS + batch_size - 1) // batch_size
+    return elapsed, commits, trace_count
 
-    conn.close()
-    if os.path.exists(db_path):
-        os.unlink(db_path)
 
-    num_commits = (TOTAL_ROWS + batch_size - 1) // batch_size
-    rows_per_sec = TOTAL_ROWS / elapsed
-    return elapsed, rows_per_sec, num_commits
+def main() -> int:
+    sqlite_bin = require_custom_sqlite()
+    RESULTS_DIR.mkdir(exist_ok=True)
+
+    lines = [
+        "SQLite batch size experiment",
+        f"SQLite binary: {sqlite_bin}",
+        f"Total rows: {TOTAL_ROWS}",
+        "Mode: rollback journal (DELETE), synchronous=NORMAL",
+        "",
+        f"{'Batch Size':>12} {'Time (s)':>10} {'Rows/sec':>12} {'Commits':>10} {'Trace lines':>12}",
+        "-" * 62,
+    ]
+
+    for batch_size in BATCH_SIZES:
+        elapsed, commits, trace_count = run_batch(sqlite_bin, batch_size)
+        rows_per_sec = TOTAL_ROWS / elapsed
+        lines.append(f"{batch_size:>12} {elapsed:>10.3f} {rows_per_sec:>12,.0f} {commits:>10} {trace_count:>12}")
+
+    lines.extend([
+        "",
+        "Interpretation: larger batches reduce the number of commits. The trace",
+        "line counts come from the modified pager.c and btree.c paths in the",
+        "custom SQLite binary, but timing is machine-dependent.",
+    ])
+
+    OUTPUT_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print("\n".join(lines))
+    print(f"\nOutput file: {OUTPUT_PATH}")
+    return 0
 
 
 if __name__ == "__main__":
-    print("SQLite Transaction Batch Size Experiment")
-    print(f"Total rows: {TOTAL_ROWS:,} | journal_mode=DELETE | synchronous=NORMAL")
-    print()
-    print(f"{'Batch Size':>12} {'Time (s)':>10} {'Rows/sec':>12} {'# Commits':>12}")
-    print("-" * 50)
-
-    results = []
-    for batch_size in BATCH_SIZES:
-        elapsed, rps, commits = run_experiment(batch_size)
-        results.append((batch_size, elapsed, rps, commits))
-        label = str(batch_size) if batch_size < TOTAL_ROWS else f"{TOTAL_ROWS} (1 txn)"
-        print(f"{label:>12} {elapsed:>10.3f} {rps:>12,.0f} {commits:>12,}")
-
-        # Adding source code trace mapping for demonstration
-        if batch_size == 1:
-            print(f"      -> Internally calls `sqlite3PagerCommitPhaseOne` and `sqlite3OsSync` {commits:,} times.")
-            print(f"      -> File: sqlite-master/src/pager.c (Line 6465)")
-        elif batch_size == TOTAL_ROWS:
-            print(f"      -> Internally calls `sqlite3PagerCommitPhaseOne` and `sqlite3OsSync` ONLY {commits:,} time.")
-            print(f"      -> B-Tree modification (sqlite-master/src/btree.c -> sqlite3BtreeInsert) happens {TOTAL_ROWS:,} times in memory.")
-
-    print()
-    baseline = results[0][1]   # batch_size = 1
-    best     = results[-1][1]  # largest batch
-    print(f"Batch=1 (autocommit) : {baseline:.3f}s")
-    print(f"Batch={TOTAL_ROWS} (one txn) : {best:.3f}s")
-    print(f"Speedup              : {baseline/best:.0f}x")
-    print()
-    print("Why? Larger transactions reduce commit-related sync overhead dramatically")
-    print("Code: src/pager.c -> sqlite3PagerCommitPhaseOne() -> sqlite3OsSync()")
+    raise SystemExit(main())

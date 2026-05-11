@@ -1,115 +1,84 @@
 """
-Experiment 4: End-to-End Execution Trace
+Main source-instrumented experiment.
 
-This experiment uses a custom-compiled SQLite binary that has been modified
-to print trace logs ([TRACE] ...) directly from its source code.
-It demonstrates the exact C functions being called during a transaction.
+Runs the modified SQLite shell from build/sqlite3_custom and captures the
+[SQLITE_TRACE] lines emitted by instrumentation in sqlite-master/src/.
 """
 
-import os
+from pathlib import Path
 import subprocess
 import sys
 
-def main():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Path to our custom compiled sqlite3 executable
+
+ROOT = Path(__file__).resolve().parent
+SQLITE_CUSTOM = ROOT / "build" / "sqlite3_custom"
+RESULTS_DIR = ROOT / "results"
+OUTPUT_PATH = RESULTS_DIR / "source_trace_output.txt"
+DB_PATH = ROOT / "results" / "source_trace.db"
+
+
+def require_custom_sqlite() -> Path:
+    candidates = [SQLITE_CUSTOM]
     if sys.platform == "win32":
-        sqlite_exe = os.path.join(script_dir, "sqlite3.exe")
-    else:
-        sqlite_exe = os.path.join(script_dir, "sqlite3")
-        
-    if not os.path.exists(sqlite_exe):
-        pass # Fallback will be handled later
+        candidates.append(SQLITE_CUSTOM.with_suffix(".exe"))
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    print("Custom SQLite binary not found. Run scripts/build_sqlite.sh first.", file=sys.stderr)
+    sys.exit(1)
 
-    db_path = os.path.join(script_dir, "trace_test.db")
-    sql_script_path = os.path.join(script_dir, "trace_script.sql")
-    output_trace_path = os.path.join(script_dir, "execution_trace.txt")
 
-    # Clean up old files
-    for p in [db_path, db_path + "-journal", db_path + "-wal", db_path + "-shm", output_trace_path]:
-        if os.path.exists(p):
-            os.unlink(p)
+def run_sql(sqlite_bin: Path, sql: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [str(sqlite_bin), "-batch", str(DB_PATH)],
+        input=sql,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
 
-    # 1. First, create the table (we don't want to trace this part heavily, 
-    # but we will just to be complete, or we can use two separate commands)
-    print("Setting up database...")
-    if os.path.exists(sqlite_exe):
-        subprocess.run(
-            [sqlite_exe, db_path, "CREATE TABLE trace_test (id INTEGER PRIMARY KEY, data TEXT);"],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
 
-    # 2. Write the transaction script
-    with open(sql_script_path, "w") as f:
-        f.write("BEGIN;\n")
-        f.write("INSERT INTO trace_test VALUES (1, 'trace_data');\n")
-        f.write("COMMIT;\n")
+def main() -> int:
+    sqlite_bin = require_custom_sqlite()
+    RESULTS_DIR.mkdir(exist_ok=True)
 
-    print(f"\nRunning trace script with custom SQLite executable...")
-    print(f"SQL to execute:")
-    print("  BEGIN;")
-    print("  INSERT INTO trace_test VALUES (1, 'trace_data');")
-    print("  COMMIT;")
+    for path in [DB_PATH, DB_PATH.with_name(DB_PATH.name + "-journal"),
+                 DB_PATH.with_name(DB_PATH.name + "-wal"),
+                 DB_PATH.with_name(DB_PATH.name + "-shm")]:
+        if path.exists():
+            path.unlink()
 
-    if not os.path.exists(sqlite_exe):
-        print(f"Warning: Custom SQLite executable not found at {sqlite_exe}")
-        print("Note: Since no C compiler was detected in the local environment, the custom")
-        print("      executable could not be built. Below is the simulated execution trace")
-        print("      that corresponds exactly to the injected printf statements in the C code.\n")
-        
-        mock_trace = [
-            "[TRACE] sqlite3PagerBegin: Acquiring database lock (Phase: 0)",
-            "[TRACE] pagerLockDb: Escalating lock to 1",
-            "[TRACE] pagerLockDb: Escalating lock to 2",
-            "[TRACE] sqlite3BtreeInsert: Inserting row/cell into B-Tree",
-            "[TRACE] pagerLockDb: Escalating lock to 4",
-            "[TRACE] sqlite3PagerCommitPhaseOne: Starting Phase 1 of Commit",
-            "[TRACE] sqlite3PagerCommitPhaseTwo: Starting Phase 2 of Commit"
-        ]
-        
-        with open(output_trace_path, "w") as out_f:
-            for line in mock_trace:
-                out_f.write(line + "\n")
-                
-        print(f"Success! Mock execution trace saved to: {output_trace_path}")
-        print("\n--- Trace Preview ---")
-        for line in mock_trace:
-            print(line)
-        print(f"\nTotal trace lines: {len(mock_trace)}")
-        
-    else:
-        # 3. Execute the script and capture the trace logs
-        with open(output_trace_path, "w") as out_f:
-            with open(sql_script_path, "r") as in_f:
-                result = subprocess.run(
-                    [sqlite_exe, db_path],
-                    stdin=in_f,
-                    stdout=out_f,
-                    stderr=subprocess.STDOUT,
-                    text=True
-                )
-                
-        if result.returncode == 0:
-            print(f"\nSuccess! Execution trace saved to: {output_trace_path}")
-            print("\n--- Trace Preview (First 15 lines) ---")
-            with open(output_trace_path, "r") as f:
-                lines = f.readlines()
-                for line in lines[:15]:
-                    print(line.strip())
-                if len(lines) > 15:
-                    print("...")
-                print(f"\nTotal trace lines: {len(lines)}")
-        else:
-            print(f"\nError running trace. Exit code: {result.returncode}")
-            with open(output_trace_path, "r") as f:
-                print(f.read())
+    sql = """
+PRAGMA journal_mode=DELETE;
+PRAGMA synchronous=FULL;
+DROP TABLE IF EXISTS trace_test;
+CREATE TABLE trace_test(id INTEGER PRIMARY KEY, data TEXT);
+BEGIN;
+INSERT INTO trace_test VALUES (1, 'source_trace_row');
+COMMIT;
+SELECT COUNT(*) FROM trace_test;
+"""
 
-    # Cleanup script
-    if os.path.exists(sql_script_path):
-        os.unlink(sql_script_path)
+    result = run_sql(sqlite_bin, sql)
+    OUTPUT_PATH.write_text(result.stdout, encoding="utf-8")
+
+    trace_lines = [line for line in result.stdout.splitlines() if "[SQLITE_TRACE]" in line]
+    print("Source-instrumented execution trace")
+    print(f"SQLite binary: {sqlite_bin}")
+    print(f"Output file: {OUTPUT_PATH}")
+    print(f"SQLite exit code: {result.returncode}")
+    print(f"Trace lines captured: {len(trace_lines)}")
+    for line in trace_lines[:20]:
+        print(line)
+
+    if result.returncode != 0:
+        print(result.stdout, file=sys.stderr)
+        return result.returncode
+    if not trace_lines:
+        print("No [SQLITE_TRACE] lines were captured; verify the custom binary was built from modified source.", file=sys.stderr)
+        return 2
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -9398,7 +9398,6 @@ int sqlite3BtreeInsert(
   int seekResult                 /* Result of prior IndexMoveto() call */
 ){
   int rc;
-  printf("[TRACE] sqlite3BtreeInsert: Inserting row/cell into B-Tree\n");
   int loc = seekResult;          /* -1: before desired location  +1: after */
   int szNew = 0;
   int idx;
@@ -9406,6 +9405,11 @@ int sqlite3BtreeInsert(
   Btree *p = pCur->pBtree;
   unsigned char *oldCell;
   unsigned char *newCell = 0;
+
+  fprintf(stderr,
+    "[SQLITE_TRACE] btree.c:sqlite3BtreeInsert begin root=%u cursorPage=%u key=%lld nData=%u flags=0x%x seekResult=%d\n",
+    pCur->pgnoRoot, pCur->pPage ? pCur->pPage->pgno : 0,
+    pX->nKey, pX->nData, flags, seekResult);
 
   assert( (flags & (BTREE_SAVEPOSITION|BTREE_APPEND|BTREE_PREFORMAT))==flags );
   assert( (flags & BTREE_PREFORMAT)==0 || seekResult || pCur->pKeyInfo==0 );
@@ -9563,6 +9567,10 @@ int sqlite3BtreeInsert(
   TRACE(("INSERT: table=%u nkey=%lld ndata=%u page=%u %s\n",
           pCur->pgnoRoot, pX->nKey, pX->nData, pPage->pgno,
           loc==0 ? "overwrite" : "new entry"));
+  fprintf(stderr,
+    "[SQLITE_TRACE] btree.c:sqlite3BtreeInsert storage-path root=%u page=%u nCell=%d freeBytes=%d mode=%s\n",
+    pCur->pgnoRoot, pPage->pgno, pPage->nCell, pPage->nFree,
+    loc==0 ? "overwrite" : "new-cell");
   assert( pPage->isInit || CORRUPT_DB );
   newCell = p->pBt->pTmpSpace;
   assert( newCell!=0 );
@@ -9597,7 +9605,13 @@ int sqlite3BtreeInsert(
     if( idx>=pPage->nCell ){
       return SQLITE_CORRUPT_PAGE(pPage);
     }
+    fprintf(stderr,
+      "[SQLITE_TRACE] btree.c:sqlite3BtreeInsert pager-write begin root=%u page=%u idx=%d\n",
+      pCur->pgnoRoot, pPage->pgno, idx);
     rc = sqlite3PagerWrite(pPage->pDbPage);
+    fprintf(stderr,
+      "[SQLITE_TRACE] btree.c:sqlite3BtreeInsert pager-write complete rc=%d root=%u page=%u idx=%d\n",
+      rc, pCur->pgnoRoot, pPage->pgno, idx);
     if( rc ){
       goto end_insert;
     }
@@ -9639,7 +9653,13 @@ int sqlite3BtreeInsert(
   }else{
     assert( pPage->leaf );
   }
+  fprintf(stderr,
+    "[SQLITE_TRACE] btree.c:sqlite3BtreeInsert storage-layer insertCellFast begin root=%u page=%u idx=%d\n",
+    pCur->pgnoRoot, pPage->pgno, idx);
   rc = insertCellFast(pPage, idx, newCell, szNew);
+  fprintf(stderr,
+    "[SQLITE_TRACE] btree.c:sqlite3BtreeInsert storage-layer insertCellFast complete rc=%d root=%u page=%u idx=%d\n",
+    rc, pCur->pgnoRoot, pPage->pgno, idx);
   assert( pPage->nOverflow==0 || rc==SQLITE_OK );
   assert( rc!=SQLITE_OK || pPage->nCell>0 || pPage->nOverflow>0 );
 
@@ -9692,6 +9712,9 @@ int sqlite3BtreeInsert(
   assert( pCur->iPage<0 || pCur->pPage->nOverflow==0 );
 
 end_insert:
+  fprintf(stderr,
+    "[SQLITE_TRACE] btree.c:sqlite3BtreeInsert complete rc=%d root=%u finalPage=%u\n",
+    rc, pCur->pgnoRoot, pCur->pPage ? pCur->pPage->pgno : 0);
   return rc;
 }
 

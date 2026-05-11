@@ -1,108 +1,119 @@
 """
-Experiment 1: WAL vs Rollback Journal Write Performance
+WAL vs rollback journal experiment using build/sqlite3_custom.
 
-Tests write throughput and concurrent read behavior under both journal modes.
+Compares the trace paths and elapsed time for the same batched write workload
+under rollback journal DELETE mode and WAL mode.
 """
 
-import sqlite3
+from pathlib import Path
+import subprocess
+import sys
 import time
-import threading
-import os
-import tempfile
-
-NUM_ROWS = 50000
-BATCH_SIZE = 500
 
 
-def run_concurrent_read(db_path, results, stop_event):
-    """Continuously read from DB while writes are happening"""
-    read_count = 0
-    blocked_count = 0
-    conn = sqlite3.connect(db_path, timeout=0)
-    while not stop_event.is_set():
-        try:
-            cur = conn.execute("SELECT COUNT(*) FROM data")
-            cur.fetchone()
-            read_count += 1
-        except sqlite3.OperationalError:
-            blocked_count += 1
-        time.sleep(0.0001)
-    conn.close()
-    results['reads'] = read_count
-    results['blocked'] = blocked_count
+ROOT = Path(__file__).resolve().parent
+SQLITE_CUSTOM = ROOT / "build" / "sqlite3_custom"
+RESULTS_DIR = ROOT / "results"
+OUTPUT_PATH = RESULTS_DIR / "wal_vs_rollback_output.txt"
+NUM_ROWS = 2000
+BATCH_SIZE = 200
 
 
-def benchmark_mode(journal_mode, label):
-    print(f"\n{'='*50}")
-    print(f"  Mode: {label}")
-    print(f"{'='*50}")
+def require_custom_sqlite() -> Path:
+    candidates = [SQLITE_CUSTOM]
+    if sys.platform == "win32":
+        candidates.append(SQLITE_CUSTOM.with_suffix(".exe"))
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    print("Custom SQLite binary not found. Run scripts/build_sqlite.sh first.", file=sys.stderr)
+    sys.exit(1)
 
-    with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
-        db_path = f.name
-    os.unlink(db_path)
 
-    # Setup: create DB and set journal mode
-    conn = sqlite3.connect(db_path)
-    conn.execute("CREATE TABLE data (id INTEGER PRIMARY KEY, val TEXT)")
-    conn.commit()
-    conn.execute(f"PRAGMA journal_mode={journal_mode}")
-    conn.commit()
-    conn.close()
+def build_sql(journal_mode: str) -> str:
+    lines = [
+        f"PRAGMA journal_mode={journal_mode};",
+        "PRAGMA synchronous=NORMAL;",
+        "DROP TABLE IF EXISTS data;",
+        "CREATE TABLE data(id INTEGER PRIMARY KEY, val TEXT);",
+    ]
+    for start in range(0, NUM_ROWS, BATCH_SIZE):
+        lines.append("BEGIN;")
+        for rowid in range(start, min(start + BATCH_SIZE, NUM_ROWS)):
+            lines.append(f"INSERT INTO data VALUES({rowid}, 'value_{rowid}');")
+        lines.append("COMMIT;")
+    lines.append("SELECT COUNT(*) FROM data;")
+    return "\n".join(lines) + "\n"
 
-    # Start concurrent reader
-    stop_event = threading.Event()
-    read_results = {}
-    reader = threading.Thread(target=run_concurrent_read, args=(db_path, read_results, stop_event))
-    reader.start()
 
-    # Write benchmark
-    conn = sqlite3.connect(db_path, timeout=5)
-    conn.execute(f"PRAGMA journal_mode={journal_mode}")
+def run_mode(sqlite_bin: Path, journal_mode: str) -> dict[str, float | int | str]:
+    db_path = RESULTS_DIR / f"journal_{journal_mode.lower()}.db"
+    for suffix in ["", "-journal", "-wal", "-shm"]:
+        path = Path(str(db_path) + suffix)
+        if path.exists():
+            path.unlink()
+
     start = time.perf_counter()
-    for batch_start in range(0, NUM_ROWS, BATCH_SIZE):
-        conn.execute("BEGIN")
-        for i in range(batch_start, min(batch_start + BATCH_SIZE, NUM_ROWS)):
-            conn.execute("INSERT INTO data VALUES (?, ?)", (i, f"value_{i}"))
-            time.sleep(0.0005)  # slow down writes
-        conn.execute("COMMIT")
+    result = subprocess.run(
+        [str(sqlite_bin), "-batch", str(db_path)],
+        input=build_sql(journal_mode),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
     elapsed = time.perf_counter() - start
-    conn.close()
+    if result.returncode != 0:
+        raise RuntimeError(result.stdout)
 
-    stop_event.set()
-    reader.join()
+    output = result.stdout
+    metrics = {
+        "mode": journal_mode,
+        "elapsed": elapsed,
+        "trace_lines": output.count("[SQLITE_TRACE]"),
+        "pager_commit_phase_one": output.count("pager.c:sqlite3PagerCommitPhaseOne begin"),
+        "pager_commit_phase_two": output.count("pager.c:sqlite3PagerCommitPhaseTwo begin"),
+        "wal_begin": output.count("wal.c:sqlite3WalBeginWriteTransaction begin"),
+        "wal_frames": output.count("wal.c:walFrames begin"),
+    }
 
-    print(f"  Write time:       {elapsed:.3f}s")
-    print(f"  Throughput:       {NUM_ROWS / elapsed:,.0f} rows/sec")
-    print(f"  Concurrent reads: {read_results.get('reads', 0):,}")
-    print(f"  Blocked reads:    {read_results.get('blocked', 0):,}")
+    for suffix in ["", "-journal", "-wal", "-shm"]:
+        path = Path(str(db_path) + suffix)
+        if path.exists():
+            path.unlink()
+    return metrics
 
-    # Cleanup
-    os.unlink(db_path)
-    wal_path = db_path + '-wal'
-    shm_path = db_path + '-shm'
-    for p in [wal_path, shm_path]:
-        if os.path.exists(p):
-            os.unlink(p)
 
-    return elapsed, read_results
+def main() -> int:
+    sqlite_bin = require_custom_sqlite()
+    RESULTS_DIR.mkdir(exist_ok=True)
+
+    rows = [run_mode(sqlite_bin, "DELETE"), run_mode(sqlite_bin, "WAL")]
+    lines = [
+        "SQLite WAL vs rollback journal experiment",
+        f"SQLite binary: {sqlite_bin}",
+        f"Rows: {NUM_ROWS}, batch size: {BATCH_SIZE}",
+        "",
+        f"{'Mode':>8} {'Time (s)':>10} {'Trace':>8} {'Pager P1':>10} {'Pager P2':>10} {'WAL begin':>10} {'WAL frames':>10}",
+        "-" * 76,
+    ]
+    for row in rows:
+        lines.append(
+            f"{row['mode']:>8} {row['elapsed']:>10.3f} {row['trace_lines']:>8} "
+            f"{row['pager_commit_phase_one']:>10} {row['pager_commit_phase_two']:>10} "
+            f"{row['wal_begin']:>10} {row['wal_frames']:>10}"
+        )
+    lines.extend([
+        "",
+        "Interpretation: WAL mode should show wal.c write-transaction and frame",
+        "logs. DELETE mode should primarily show rollback-journal pager commit",
+        "logs. Timing is machine-dependent and should be regenerated locally.",
+    ])
+
+    OUTPUT_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print("\n".join(lines))
+    print(f"\nOutput file: {OUTPUT_PATH}")
+    return 0
 
 
 if __name__ == "__main__":
-    print("SQLite Journal Mode Performance Experiment")
-    print(f"Inserting {NUM_ROWS:,} rows in batches of {BATCH_SIZE}")
-
-    rollback_time, rollback_reads = benchmark_mode("DELETE", "Rollback Journal (DELETE)")
-    wal_time, wal_reads = benchmark_mode("WAL", "WAL (Write-Ahead Log)")
-
-    print(f"\n{'='*50}")
-    print("  SUMMARY")
-    print(f"{'='*50}")
-    print(f"  Rollback journal:  {rollback_time:.3f}s | reads={rollback_reads.get('reads',0)}, blocked={rollback_reads.get('blocked',0)}")
-    print("    -> Uses src/pager.c -> pager_open_journal() & pagerLockDb(EXCLUSIVE_LOCK)")
-    
-    print(f"  WAL mode:          {wal_time:.3f}s | reads={wal_reads.get('reads',0)}, blocked={wal_reads.get('blocked',0)}")
-    print("    -> Uses src/wal.c -> sqlite3WalBeginWriteTransaction() & walWriteToLog()")
-    speedup = rollback_time / wal_time if wal_time > 0 else 0
-    print(f"\n  WAL speedup for concurrent access: {speedup:.2f}×")
-    print(f"\n  Key finding: WAL allows concurrent reads during writes.")
-    print(f"  Rollback journal blocks readers while writer holds EXCLUSIVE lock.")
+    raise SystemExit(main())
