@@ -1,0 +1,12 @@
+SQLite WAL vs rollback journal experiment
+SQLite binary: /home/ssp4/Documents/BDE_Project_DS614/Extractors-SQLite_Transactions/build/sqlite3_custom
+Rows: 2000, batch size: 200
+
+    Mode   Time (s)    Trace   Pager P1   Pager P2  WAL begin WAL frames
+----------------------------------------------------------------------------
+  DELETE      0.031    10225         11         11          0          0
+     WAL      0.015    10196         12         12         11         11
+
+Interpretation: WAL mode should show wal.c write-transaction and frame
+logs. DELETE mode should primarily show rollback-journal pager commit
+logs. Timing is machine-dependent and should be regenerated locally.

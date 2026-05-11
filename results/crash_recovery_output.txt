@@ -1,0 +1,44 @@
+SQLite crash recovery experiment
+SQLite binary: /home/ssp4/Documents/BDE_Project_DS614/Extractors-SQLite_Transactions/build/sqlite3_custom
+Database: /home/ssp4/Documents/BDE_Project_DS614/Extractors-SQLite_Transactions/results/crash_recovery.db
+Setup exit code: 0
+Killing writer before COMMIT after sending 1000 inserts.
+Writer exit code: -9
+Writer trace lines: 533
+Rollback journal present before reopen: True
+Verifier exit code: 0
+Verifier trace lines: 20
+Verifier output:
+[SQLITE_TRACE] pager.c:pagerLockDb request state=0 oldLock=0 newLock=1 journalMode=0 wal=0
+[SQLITE_TRACE] pager.c:pagerLockDb complete rc=0 state=0 oldLock=0 currentLock=1 requestedLock=1
+[SQLITE_TRACE] pager.c:hasHotJournal begin state=0 lock=1 journalMode=0 journalOpen=0
+[SQLITE_TRACE] pager.c:hasHotJournal access rc=0 exists=1 journalOpen=0
+[SQLITE_TRACE] pager.c:hasHotJournal complete rc=0 hotJournal=0 state=0 lock=1
+[SQLITE_TRACE] pager.c:pagerLockDb request state=0 oldLock=0 newLock=1 journalMode=0 wal=0
+[SQLITE_TRACE] pager.c:pagerLockDb complete rc=0 state=0 oldLock=0 currentLock=1 requestedLock=1
+[SQLITE_TRACE] pager.c:hasHotJournal begin state=0 lock=1 journalMode=0 journalOpen=0
+[SQLITE_TRACE] pager.c:hasHotJournal access rc=0 exists=1 journalOpen=0
+[SQLITE_TRACE] pager.c:hasHotJournal complete rc=0 hotJournal=0 state=0 lock=1
+[TRACE] sqlite3VdbeExec: Starting VDBE execution
+[TRACE] OP_Transaction: Starting/Upgrading transaction on DB 0 (P2=0)
+[TRACE] sqlite3VdbeExec: Starting VDBE execution
+[TRACE] sqlite3VdbeExec: Starting VDBE execution
+[TRACE] OP_Transaction: Starting/Upgrading transaction on DB 0 (P2=0)
+[SQLITE_TRACE] pager.c:pagerLockDb request state=0 oldLock=0 newLock=1 journalMode=0 wal=0
+[SQLITE_TRACE] pager.c:pagerLockDb complete rc=0 state=0 oldLock=0 currentLock=1 requestedLock=1
+[SQLITE_TRACE] pager.c:hasHotJournal begin state=0 lock=1 journalMode=0 journalOpen=0
+[SQLITE_TRACE] pager.c:hasHotJournal access rc=0 exists=1 journalOpen=0
+[SQLITE_TRACE] pager.c:hasHotJournal complete rc=0 hotJournal=0 state=0 lock=1
+[SQLITE_TRACE] pager.c:pagerLockDb request state=0 oldLock=0 newLock=1 journalMode=0 wal=0
+[SQLITE_TRACE] pager.c:pagerLockDb complete rc=0 state=0 oldLock=0 currentLock=1 requestedLock=1
+[SQLITE_TRACE] pager.c:hasHotJournal begin state=0 lock=1 journalMode=0 journalOpen=0
+[SQLITE_TRACE] pager.c:hasHotJournal access rc=0 exists=1 journalOpen=0
+[SQLITE_TRACE] pager.c:hasHotJournal complete rc=0 hotJournal=0 state=0 lock=1
+[TRACE] sqlite3VdbeExec: Starting VDBE execution
+[TRACE] OP_Transaction: Starting/Upgrading transaction on DB 0 (P2=0)
+[TRACE] sqlite3VdbeExec: Starting VDBE execution
+[TRACE] sqlite3VdbeExec: Starting VDBE execution
+[TRACE] OP_Transaction: Starting/Upgrading transaction on DB 0 (P2=0)
+0
+[TRACE] sqlite3VdbeExec: Starting VDBE execution
+PASS: uncommitted rows did not persist after reopening the database.

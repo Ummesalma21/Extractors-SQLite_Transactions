@@ -1,0 +1,16 @@
+SQLite batch size experiment
+SQLite binary: /home/ssp4/Documents/BDE_Project_DS614/Extractors-SQLite_Transactions/build/sqlite3_custom
+Total rows: 2000
+Mode: rollback journal (DELETE), synchronous=NORMAL
+
+  Batch Size   Time (s)     Rows/sec    Commits  Trace lines
+--------------------------------------------------------------
+           1      1.822        1,098       2000        46045
+          10      0.197       10,177        200        13645
+         100      0.034       59,698         20        10405
+         500      0.018      112,339          4        10117
+        2000      0.014      145,266          1        10063
+
+Interpretation: larger batches reduce the number of commits. The trace
+line counts come from the modified pager.c and btree.c paths in the
+custom SQLite binary, but timing is machine-dependent.
