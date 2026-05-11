@@ -52,6 +52,29 @@ Output:
 
 `diffs/sqlite_trace_instrumentation.diff`
 
+## Demo Commands
+
+Build custom SQLite:
+
+```bash
+bash scripts/build_sqlite.sh
+```
+
+Run all experiments:
+
+```bash
+bash scripts/run_all_experiments.sh
+```
+
+Run individual experiments:
+
+```bash
+python3 experiment_execution_trace.py
+python3 experiment_batch_size.py
+python3 experiment_crash_recovery.py
+python3 experiment_wal_vs_rollback.py
+```
+
 ## File Structure
 
 - `sqlite-master/src/vdbe.c`: VDBE (SQL execution engine) transaction opcode instrumentation (`sqlite3VdbeExec`, `OP_Transaction`, `OP_AutoCommit`)

@@ -25,9 +25,10 @@ A write transaction follows this path:
 Important code locations:
 
 - `sqlite-master/src/vdbe.c`: executes VDBE bytecode and transaction opcodes.
+- `sqlite-master/src/btree.c:sqlite3BtreeInsert()`: inserts or overwrites B-tree cells.
 - `sqlite-master/src/pager.c:sqlite3PagerBegin()`: starts the pager-level write transaction.
 - `sqlite-master/src/pager.c:pagerLockDb()`: requests lock transitions such as shared, reserved, and exclusive locks.
-- `sqlite-master/src/btree.c:sqlite3BtreeInsert()`: inserts or overwrites B-tree cells.
+- `sqlite-master/src/pager.c:hasHotJournal()`: checks whether rollback-journal recovery is needed.
 - `sqlite-master/src/pager.c:sqlite3PagerCommitPhaseOne()`: performs the first commit phase, including journal/database sync work.
 - `sqlite-master/src/pager.c:sqlite3PagerCommitPhaseTwo()`: finalizes the commit and returns the pager to a reader/open state.
 - `sqlite-master/src/wal.c`: handles WAL write transactions and WAL frame commits when WAL mode is enabled.
@@ -53,6 +54,11 @@ This proves the write reached the pager transaction manager in rollback-journal 
 This proves SQLite requested a lock escalation as part of the write transaction.
 
 ```text
+[SQLITE_TRACE] pager.c:hasHotJournal access rc=0 exists=0 journalOpen=0
+```
+This proves the rollback-journal path checked whether recovery was needed before continuing.
+
+```text
 [SQLITE_TRACE] btree.c:sqlite3BtreeInsert begin root=2 cursorPage=2 key=1 nData=19 flags=0x0 seekResult=-1
 ```
 This proves row insertion reached the B-tree storage path.
@@ -63,7 +69,7 @@ This proves row insertion reached the B-tree storage path.
 ```
 These lines prove that the pager commit protocol reached phase one and phase two successfully.
 
-This trace does not prove every possible SQLite path. It proves one complete observed transaction path for the workload used in `experiment_execution_trace.py`.
+The main source trace is a rollback-journal trace, so it does not contain WAL frame lines. WAL source-path evidence appears in the WAL vs rollback-journal experiment. This trace does not prove every possible SQLite path; it proves one complete observed transaction path for the workload used in `experiment_execution_trace.py`.
 
 ## 3. Design Decisions
 
@@ -116,7 +122,7 @@ Observed results:
 | 500 | 0.019 | 104,664 | 4 | 14148 |
 | 2000 | 0.015 | 137,879 | 1 | 14082 |
 
-Smaller batches cause more commits. Batch size `1` performed `2000` commits and produced `58060` trace lines. Batch size `2000` performed `1` commit and produced `14082` trace lines. This shows that repeated commits trigger repeated pager, journal, and lock work. Larger batches reduce repeated commit overhead and improve observed throughput.
+Smaller batches cause more commits. Batch size `1` performed `2000` commits and produced `58060` trace lines. Batch size `2000` performed `1` commit and produced `14082` trace lines. This shows that repeated commits trigger repeated pager, journal, lock, and commit-phase work. Larger batches reduce repeated transaction overhead and improve observed throughput.
 
 Absolute runtime is machine-dependent. The important evidence is the relationship between commit count, throughput, and trace-line count.
 
@@ -172,6 +178,13 @@ Example WAL evidence from the result file:
 ```
 
 Timing is machine-dependent. The stronger evidence is the difference in source-level paths: rollback journal uses pager commit without WAL frame logs, while WAL mode enters the WAL write and frame-commit code.
+
+### What We Learned
+
+- Small transactions are expensive because each transaction repeatedly enters the pager commit and journaling machinery.
+- Rollback journal recovery protects atomicity after failure; in the crash experiment, uncommitted rows did not persist after reopening.
+- WAL changes the write path by appending frames and updating the WAL index instead of using only rollback-journal behavior.
+- Source instrumentation connected abstract SQLite transaction concepts to concrete files and functions: `vdbe.c`, `btree.c`, `pager.c`, and `wal.c`.
 
 ## 6. Failure Analysis
 
