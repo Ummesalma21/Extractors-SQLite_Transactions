@@ -5,6 +5,11 @@
 
 ## 1. System Overview
 
+<p align="center">
+<img width="550" height="550" alt="sqlite architecture" src="https://github.com/user-attachments/assets/1426fdd7-7d51-4eb5-9a67-d30b3839163e" /><br>
+  <i>SQLite Architecture</i>
+</p>
+
 SQLite is an embedded relational database engine. Its transaction system has to make ordinary file writes behave like ACID database transactions: changes must be atomic, durable after commit, isolated from conflicting writers, and recoverable after a crash.
 
 This project studies that transaction system by inserting `[SQLITE_TRACE]` logs directly into SQLite source code, rebuilding SQLite, and running the modified binary. The relevant modified files are:
