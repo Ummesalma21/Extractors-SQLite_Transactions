@@ -205,10 +205,6 @@ Observed behavior also supports the WAL concurrency tradeoff: DELETE mode had `3
 
 As data size grows, B-tree pages can split and the tree height can increase. This increases page-cache pressure and page I/O. The batch-size experiment also shows that commit overhead can dominate small transactions: the same `2000` inserted rows produced much more overhead at batch size `1` than at batch size `2000`.
 
-### Crash During Transaction
-
-The crash-recovery result shows the writer was killed before `COMMIT`, a rollback journal was present, and the final row count after reopen was `0`. This is the expected atomicity behavior for an uncommitted transaction.
-
 ### Concurrent Writers / Lock Contention
 
 SQLite uses a single-writer model. The `pagerLockDb` traces show lock acquisition and escalation during writes. WAL can improve reader/writer overlap, but it does not allow multiple simultaneous writers.
